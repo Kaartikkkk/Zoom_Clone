@@ -22,13 +22,20 @@ export default function ScheduleMeetingModal({
   onSchedule,
   isLoading,
 }: ScheduleMeetingModalProps) {
+  const getYYYYMMDD = (d: Date) => {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  };
+
   const now = new Date();
   const tomorrow = new Date(now);
   tomorrow.setDate(tomorrow.getDate() + 1);
 
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
-  const [date, setDate] = useState(tomorrow.toISOString().split('T')[0]);
+  const [date, setDate] = useState(getYYYYMMDD(tomorrow));
   const [time, setTime] = useState('10:00');
   const [duration, setDuration] = useState(60);
   const [timezone] = useState('Asia/Kolkata');
@@ -96,7 +103,7 @@ export default function ScheduleMeetingModal({
                   className="form-input"
                   value={date}
                   onChange={(e) => setDate(e.target.value)}
-                  min={now.toISOString().split('T')[0]}
+                  min={getYYYYMMDD(now)}
                   required
                 />
               </div>

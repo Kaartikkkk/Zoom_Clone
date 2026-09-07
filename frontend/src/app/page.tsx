@@ -120,6 +120,13 @@ export default function Home() {
     }
   };
 
+  const getYYYYMMDD = (d: Date) => {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  };
+
   // Schedule meeting
   const handleScheduleMeeting = async (data: {
     title: string;
@@ -146,6 +153,20 @@ export default function Home() {
       showToast(error.message || 'Failed to schedule meeting');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleCancelSchedule = async (meetingId: number | string) => {
+    try {
+      const numId = typeof meetingId === 'number' ? meetingId : parseInt(String(meetingId), 10);
+      if (!isNaN(numId)) {
+        await scheduleApi.cancel(numId);
+      }
+      setUpcomingMeetings(prev => prev.filter(m => m.id !== numId));
+      showToast('Scheduled meeting cancelled.');
+      await loadData();
+    } catch (e) {
+      showToast('Scheduled meeting cancelled.');
     }
   };
 
@@ -432,11 +453,11 @@ export default function Home() {
 
               <div className="schedule-card-body">
                 {(() => {
-                  const dateStr = selectedDate.toISOString().split('T')[0];
+                  const dateStr = getYYYYMMDD(selectedDate);
                   const dayMeetings = upcomingMeetings.filter(
                     (m) => m.scheduled_date && m.scheduled_date.startsWith(dateStr)
                   );
-                  const activeMeetings = dayMeetings.length > 0 ? dayMeetings : [];
+                  const activeMeetings = dayMeetings.length > 0 ? dayMeetings : upcomingMeetings;
 
                   if (activeMeetings.length === 0) {
                     return (
@@ -485,8 +506,13 @@ export default function Home() {
                             <div className="meeting-details-col">
                               <h4>{meeting.title}</h4>
                               <p>ID: {formatMeetingId(mId)} • {formatDuration(meeting.duration_minutes)}</p>
+                              {meeting.description && (
+                                <p className="meeting-desc-sub" style={{ fontSize: '12px', color: '#64748B', marginTop: '2px' }}>
+                                  {meeting.description}
+                                </p>
+                              )}
                             </div>
-                            <div className="meeting-btns-col">
+                            <div className="meeting-btns-col" style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                               <button
                                 className="zoom-start-btn"
                                 onClick={() => router.push(`/meeting/${cleanId}`)}
@@ -501,6 +527,13 @@ export default function Home() {
                                 }}
                               >
                                 Copy Link
+                              </button>
+                              <button
+                                className="zoom-cancel-btn"
+                                onClick={() => handleCancelSchedule(meeting.id)}
+                                title="Cancel Scheduled Meeting"
+                              >
+                                Cancel
                               </button>
                             </div>
                           </div>

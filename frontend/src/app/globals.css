@@ -645,6 +645,22 @@ nextjs-portal, [data-nextjs-toast], #nextjs-dev-tools, div[class*="next-dev"] {
   background: #E8E8ED;
 }
 
+.zoom-cancel-btn {
+  background: rgba(224, 40, 40, 0.08);
+  color: #DC2626;
+  padding: 6px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 500;
+  border: 1px solid rgba(220, 38, 38, 0.2);
+  transition: all var(--transition-fast);
+}
+
+.zoom-cancel-btn:hover {
+  background: #FEE2E2;
+  color: #991B1B;
+}
+
 .schedule-card-footer {
   padding: 12px 18px;
   border-top: 1px solid var(--border-color);
