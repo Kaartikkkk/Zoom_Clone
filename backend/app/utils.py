@@ -10,7 +10,8 @@ def generate_meeting_id() -> str:
     return f"{part1}-{part2}-{part3}"
 
 
-def generate_invite_link(meeting_id: str, base_url: str = "http://localhost:3000") -> str:
-    """Generate invite link for a meeting."""
+def generate_invite_link(meeting_id: str) -> str:
+    """Generate invite link path for a meeting."""
     clean_id = meeting_id.replace("-", "")
-    return f"{base_url}/meeting/{clean_id}"
+    return f"/meeting/{clean_id}"
+

@@ -24,8 +24,9 @@ export default function JoinMeetingModal({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (meetingId.trim() && displayName.trim()) {
-      onJoin(meetingId.trim(), displayName.trim());
+    if (meetingId.trim()) {
+      const nameToUse = displayName.trim() || 'Guest';
+      onJoin(meetingId.trim(), nameToUse);
     }
   };
 
@@ -61,7 +62,7 @@ export default function JoinMeetingModal({
               <input
                 type="text"
                 className="form-input"
-                placeholder="Enter your display name"
+                placeholder="Enter your display name (default: Guest)"
                 value={displayName}
                 onChange={(e) => setDisplayName(e.target.value)}
               />
@@ -105,7 +106,7 @@ export default function JoinMeetingModal({
             <button
               type="submit"
               className="btn btn-primary"
-              disabled={!meetingId.trim() || !displayName.trim() || isLoading}
+              disabled={!meetingId.trim() || isLoading}
             >
               {isLoading ? 'Joining...' : 'Join'}
             </button>

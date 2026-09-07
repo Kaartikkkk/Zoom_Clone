@@ -57,7 +57,7 @@ export default function ParticipantsPanel({
             </div>
             <div className="participant-info">
               <div className="participant-name">
-                {p.display_name}
+                {p.display_name.replace(/\s*\(Host\)$/i, '')}
                 {p.is_host && ' (Host)'}
               </div>
               <div className="participant-role">

@@ -171,7 +171,7 @@ export default function MeetingRoom({ params }: MeetingPageProps) {
       let m: Meeting | null = null;
       let meetingError = '';
 
-      // 1. Try to fetch existing meeting from backend
+      // 1. Fetch meeting from backend
       try {
         m = await meetingApi.get(id);
       } catch (err: unknown) {
@@ -184,93 +184,56 @@ export default function MeetingRoom({ params }: MeetingPageProps) {
         return;
       }
 
+      if (m.status === 'ended') {
+        setError('This meeting has ended.');
+        setMeeting(m);
+        return;
+      }
+
       setMeeting(m);
       setError('');
 
-      // Try updating backend status if waiting/ended
-      if (m.meeting_id && (m.status === 'waiting' || m.status === 'ended')) {
+      // Update status to active if waiting
+      if (m.meeting_id && m.status === 'waiting') {
         try {
           const updated = await meetingApi.update(m.meeting_id, { status: 'active' });
           setMeeting(updated);
         } catch (e) { /* ignore */ }
       }
 
-      // Try fetching participants from backend
-      let parts: Participant[] = [];
-      if (m.meeting_id) {
-        try {
-          parts = await meetingApi.getParticipants(m.meeting_id);
-        } catch (e) { /* ignore */ }
-      }
-
-      // Check if custom display name was passed via query string (from Join Meeting)
+      // Check if custom display name was passed via URL (?name=...)
       let customName = '';
       if (typeof window !== 'undefined') {
         const urlParams = new URLSearchParams(window.location.search);
         customName = urlParams.get('name') || '';
       }
 
-      // Seed default participants if empty so room displays active tiles
-      if (!parts || parts.length === 0) {
-        const myName = customName || (m.host_name ? `${m.host_name} (Host)` : 'Kartik (Host)');
-        parts = [
-          {
-            id: 101,
-            meeting_id: m.id || 1,
-            user_id: 1,
-            display_name: myName,
-            joined_at: new Date().toISOString(),
-            left_at: null,
-            is_host: true,
-            is_muted: false,
-            is_video_on: true,
-          },
-          {
-            id: 102,
-            meeting_id: m.id || 1,
-            user_id: 2,
-            display_name: 'Priya Sharma',
-            joined_at: new Date().toISOString(),
-            left_at: null,
-            is_host: false,
-            is_muted: true,
-            is_video_on: true,
-          },
-          {
-            id: 103,
-            meeting_id: m.id || 1,
-            user_id: 3,
-            display_name: 'Rahul Verma',
-            joined_at: new Date().toISOString(),
-            left_at: null,
-            is_host: false,
-            is_muted: false,
-            is_video_on: true,
-          },
-        ];
-      } else if (customName) {
-        // Ensure custom user display name is visible in participant list
-        const exists = parts.some(p => p.display_name.toLowerCase() === customName.toLowerCase());
-        if (!exists) {
-          parts.unshift({
-            id: Date.now(),
-            meeting_id: m.id || 1,
-            user_id: null,
-            display_name: customName,
-            joined_at: new Date().toISOString(),
-            left_at: null,
-            is_host: false,
-            is_muted: false,
-            is_video_on: true,
-          });
-        }
+      // 2. Fetch active participants from backend SQLite
+      let parts: Participant[] = [];
+      try {
+        parts = await meetingApi.getParticipants(m.meeting_id);
+      } catch (e) { /* ignore */ }
+
+      // 3. Register user in backend if not present
+      const userDisplayName = (customName.trim() || (m.host_name ? m.host_name : 'Kartik')).replace(/\s*\(Host\)$/i, '');
+      const alreadyJoined = parts.some(p => p.display_name.replace(/\s*\(Host\)$/i, '').toLowerCase() === userDisplayName.toLowerCase());
+
+      if (!alreadyJoined) {
+        try {
+          const newPart = await meetingApi.join(m.meeting_id, { display_name: userDisplayName });
+          parts = await meetingApi.getParticipants(m.meeting_id);
+          if (!parts.some(p => p.id === newPart.id)) {
+            parts.push(newPart);
+          }
+        } catch (e) { /* ignore */ }
       }
 
       setParticipants(parts);
-      const myPart = customName 
-        ? parts.find(p => p.display_name.toLowerCase() === customName.toLowerCase()) || parts[0]
-        : (parts.find(p => p.is_host) || parts[0]);
-      setMyParticipantId(myPart ? myPart.id : 101);
+
+      const myPart = parts.find(p => p.display_name.replace(/\s*\(Host\)$/i, '').toLowerCase() === userDisplayName.toLowerCase()) || parts[0];
+      if (myPart) {
+        setMyParticipantId(myPart.id);
+      }
     } catch (err) {
       console.error('Meeting load error:', err);
       setError('Meeting not found. Please check the Meeting ID or invite link.');
@@ -682,7 +645,7 @@ export default function MeetingRoom({ params }: MeetingPageProps) {
                         <path d="M17 16.95A7 7 0 015 12v-2m14 0v2c0 .74-.11 1.45-.33 2.12" />
                       </svg>
                     )}
-                    {p.display_name}
+                    {p.display_name.replace(/\s*\(Host\)$/i, '')}
                     {p.is_host && ' (Host)'}
                   </div>
                 </div>
