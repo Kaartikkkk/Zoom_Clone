@@ -7,7 +7,8 @@ import Navbar from '@/components/Navbar';
 import NewMeetingModal from '@/components/NewMeetingModal';
 import JoinMeetingModal from '@/components/JoinMeetingModal';
 import ScheduleMeetingModal from '@/components/ScheduleMeetingModal';
-import { meetingApi, scheduleApi, type Meeting, type UpcomingMeeting } from '@/lib/api';
+import AuthModal from '@/components/AuthModal';
+import { meetingApi, scheduleApi, authApi, type Meeting, type UpcomingMeeting, type User } from '@/lib/api';
 
 export default function Home() {
   const router = useRouter();
@@ -25,6 +26,9 @@ export default function Home() {
   const [joinError, setJoinError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [toast, setToast] = useState('');
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [authModalTab, setAuthModalTab] = useState<'login' | 'signup'>('login');
 
   useEffect(() => {
     setMounted(true);
@@ -42,12 +46,16 @@ export default function Home() {
   const loadData = useCallback(async () => {
     try {
       setApiError(null);
-      const [upcoming, recent] = await Promise.all([
+      const [upcoming, recent, user] = await Promise.all([
         meetingApi.getUpcoming(),
         meetingApi.getRecent(),
+        authApi.me().catch(() => null),
       ]);
       setUpcomingMeetings(upcoming);
       setRecentMeetings(recent);
+      if (user) {
+        setCurrentUser(user);
+      }
     } catch (err: unknown) {
       console.error('Failed to load data:', err);
       setApiError('Unable to load meetings from server. Please check your connection.');
@@ -68,7 +76,8 @@ export default function Home() {
   const handleOpenNewMeeting = async () => {
     setIsLoading(true);
     try {
-      const meeting = await meetingApi.create({ title: "Kartik's Zoom Meeting" });
+      const hostName = currentUser?.name || 'Kartik';
+      const meeting = await meetingApi.create({ title: `${hostName}'s Zoom Meeting`, host_id: currentUser?.id || 1 });
       const cleanId = (meeting.meeting_id || String(meeting.id)).replace(/-/g, '');
       const origin = typeof window !== 'undefined' ? window.location.origin : 'https://frontend-sable-rho-u2nzn8l17o.vercel.app';
       const fullUrl = meeting.invite_link?.startsWith('http')
@@ -175,6 +184,24 @@ export default function Home() {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleOpenAuth = (tab: 'login' | 'signup' = 'login') => {
+    setAuthModalTab(tab);
+    setShowAuthModal(true);
+  };
+
+  const handleLogout = async () => {
+    await authApi.logout();
+    setCurrentUser(null);
+    showToast('Signed out. Defaulting to standard profile.');
+    await loadData();
+  };
+
+  const handleAuthSuccess = (user: User) => {
+    setCurrentUser(user);
+    showToast(`Signed in as ${user.name}`);
+    loadData();
   };
 
   const handleCancelSchedule = async (meetingId: number | string) => {
@@ -293,6 +320,9 @@ export default function Home() {
           setShowJoinMeeting(true);
         }}
         onSchedule={() => setShowSchedule(true)}
+        currentUser={currentUser}
+        onOpenAuth={handleOpenAuth}
+        onLogout={handleLogout}
       />
 
       <div className="app-body">
@@ -807,6 +837,13 @@ export default function Home() {
         onClose={() => setShowSchedule(false)}
         onSchedule={handleScheduleMeeting}
         isLoading={isLoading}
+      />
+
+      <AuthModal
+        isOpen={showAuthModal}
+        initialTab={authModalTab}
+        onClose={() => setShowAuthModal(false)}
+        onSuccess={handleAuthSuccess}
       />
 
       {/* Toast */}

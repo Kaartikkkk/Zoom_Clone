@@ -14,12 +14,16 @@ export async function apiFetch<T>(
   options: RequestInit = {}
 ): Promise<T> {
   const url = `${getApiBase()}${endpoint}`;
+  const token = typeof window !== 'undefined' ? localStorage.getItem('zoom_auth_token') : null;
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...(options.headers as Record<string, string>),
+  };
+
   const res = await fetch(url, {
     ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...options.headers,
-    },
+    headers,
   });
 
   if (!res.ok) {
@@ -156,6 +160,52 @@ export const scheduleApi = {
   list: () => apiFetch<ScheduledMeeting[]>('/api/schedule'),
 
   cancel: (id: number) => apiFetch(`/api/schedule/${id}`, { method: 'DELETE' }),
+};
+
+export interface AuthResponse {
+  user: User;
+  token: string;
+  message: string;
+}
+
+export const authApi = {
+  signup: async (data: { name: string; email: string; password: string }) => {
+    const res = await apiFetch<AuthResponse>('/api/auth/signup', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    if (typeof window !== 'undefined' && res.token) {
+      localStorage.setItem('zoom_auth_token', res.token);
+      localStorage.setItem('zoom_auth_user', JSON.stringify(res.user));
+    }
+    return res;
+  },
+
+  login: async (data: { email: string; password: string }) => {
+    const res = await apiFetch<AuthResponse>('/api/auth/login', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    if (typeof window !== 'undefined' && res.token) {
+      localStorage.setItem('zoom_auth_token', res.token);
+      localStorage.setItem('zoom_auth_user', JSON.stringify(res.user));
+    }
+    return res;
+  },
+
+  me: () => apiFetch<User>('/api/auth/me'),
+
+  logout: async () => {
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('zoom_auth_token');
+      localStorage.removeItem('zoom_auth_user');
+    }
+    try {
+      await apiFetch<{ message: string }>('/api/auth/logout', { method: 'POST' });
+    } catch (e) {
+      // ignore
+    }
+  },
 };
 
 export const userApi = {

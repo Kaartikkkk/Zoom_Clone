@@ -2838,3 +2838,14 @@ nextjs-portal, [data-nextjs-toast], #nextjs-dev-tools, div[class*="next-dev"] {
 .toolbar-btn.active-share {
   color: #10B981 !important;
 }
+
+@keyframes popoverIn {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}

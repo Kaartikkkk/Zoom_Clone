@@ -76,6 +76,20 @@ A full-stack, production-grade video conferencing web application inspired by Zo
 - **Safe Area Insets**: Support for notched screens (`env(safe-area-inset-bottom)`).
 - **Responsive Controls**: Desktop-only tools (Screen Share, Record) automatically hide on screens `< 640px` to fit essential meeting controls comfortably.
 
+### 6. 🔐 User Authentication & Account Management
+- **Zero-Friction Default Experience**: By default, the application is pre-authenticated with the standard host user ("Kartik"), allowing frictionless evaluation without mandatory login walls.
+- **Full Login & Signup System**:
+  - Modal with **Sign In** and **Sign Up** tabs.
+  - PBKDF2 HMAC-SHA256 password hashing with 16-byte random salt and 100,000 iterations.
+  - JWT/Bearer token authentication with local storage persistence.
+  - Pre-seeded Demo Credentials:
+    - **Email**: `kartik@zoom.us`
+    - **Password**: `password123`
+    - **Auto-Fill Demo Credentials** button for instant 1-click login.
+- **Zoom-Style Profile Popover**:
+  - Click user avatar in top-right to view profile details, Personal Meeting ID (PMI), Licensed badge.
+  - **Switch Account / Sign In**, **Sign Up New Account**, and **Sign Out** options.
+
 ---
 
 ## ⚡ Media Streaming & Anti-Freeze Architecture
@@ -104,21 +118,21 @@ Standard WebRTC applications frequently suffer from video freezes 10–15 second
 The SQLite relational database (`zoom_clone.db`) is managed via SQLAlchemy ORM models in [`backend/app/models.py`](file:///Users/Kartikkk/Documents/Scaler/Zoom_Clone/backend/app/models.py).
 
 ```
-┌─────────────────────┐       ┌────────────────────────┐       ┌────────────────────────┐
-│        users        │       │        meetings        │       │   scheduled_meetings   │
-├─────────────────────┤       ├────────────────────────┤       ├────────────────────────┤
-│ id (PK, int)        │───┐   │ id (PK, int)           │───┐   │ id (PK, int)           │
-│ name (str)          │   │   │ meeting_id (UK, str)   │   └───│ meeting_id (FK, int)   │
-│ email (UK, str)     │   └──<│ host_id (FK, int)      │       │ description (text)     │
-│ avatar_url (str)    │       │ title (str)            │       │ scheduled_date (date)  │
-│ personal_meeting_id │       │ status (str)           │       │ scheduled_time (time)  │
-│ created_at (dt)     │       │ type (str)             │       │ duration_minutes (int) │
-└─────────────────────┘       │ invite_link (str)      │       │ timezone (str)         │
-                              │ created_at (dt)        │       │ recurring (bool)       │
-                              │ started_at (dt)        │       └────────────────────────┘
-                              │ ended_at (dt)          │
-                              │ duration_minutes (int) │
-                              └────────────────────────┘
+┌─────────────────────────┐       ┌────────────────────────┐       ┌────────────────────────┐
+│          users          │       │        meetings        │       │   scheduled_meetings   │
+├─────────────────────────┤       ├────────────────────────┤       ├────────────────────────┤
+│ id (PK, int)            │───┐   │ id (PK, int)           │───┐   │ id (PK, int)           │
+│ name (str)              │   │   │ meeting_id (UK, str)   │   └───│ meeting_id (FK, int)   │
+│ email (UK, str)         │   └──<│ host_id (FK, int)      │       │ description (text)     │
+│ password_hash (str,nul) │       │ title (str)            │       │ scheduled_date (date)  │
+│ avatar_url (str)        │       │ status (str)           │       │ scheduled_time (time)  │
+│ personal_meeting_id     │       │ type (str)             │       │ duration_minutes (int) │
+│ created_at (dt)         │       │ invite_link (str)      │       │ timezone (str)         │
+└─────────────────────────┘       │ created_at (dt)        │       │ recurring (bool)       │
+                                  │ started_at (dt)        │       └────────────────────────┘
+                                  │ ended_at (dt)          │
+                                  │ duration_minutes (int) │
+                                  └────────────────────────┘
                                           │
                                           │ 1:N
                                           ▼

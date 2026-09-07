@@ -17,6 +17,23 @@ class UserResponse(BaseModel):
         from_attributes = True
 
 
+class UserSignupRequest(BaseModel):
+    name: str = Field(..., min_length=2, max_length=100)
+    email: str = Field(..., min_length=5, max_length=255)
+    password: str = Field(..., min_length=6, max_length=100)
+
+
+class UserLoginRequest(BaseModel):
+    email: str = Field(..., min_length=5, max_length=255)
+    password: str = Field(..., min_length=1, max_length=100)
+
+
+class AuthResponse(BaseModel):
+    user: UserResponse
+    token: str
+    message: str
+
+
 # ─── Meeting Schemas ──────────────────────────────────────────
 
 class MeetingCreate(BaseModel):

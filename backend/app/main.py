@@ -5,8 +5,9 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
 from .database import engine, SessionLocal, Base
+from sqlalchemy import text
 from .models import User, Meeting, ScheduledMeeting, Participant
-from .routers import meetings, schedule, users
+from .routers import meetings, schedule, users, auth
 from .seed import seed_database
 from .websocket_manager import manager
 
@@ -34,6 +35,7 @@ app.add_middleware(
 )
 
 # Register routers
+app.include_router(auth.router)
 app.include_router(meetings.router)
 app.include_router(schedule.router)
 app.include_router(users.router)
@@ -41,8 +43,17 @@ app.include_router(users.router)
 
 @app.on_event("startup")
 def startup_event():
-    """Create database tables and seed data on startup."""
+    """Create database tables, ensure schema migrations, and seed data on startup."""
     Base.metadata.create_all(bind=engine)
+
+    # Safe migration for existing SQLite DBs to add password_hash column if absent
+    with engine.connect() as conn:
+        try:
+            conn.execute(text("ALTER TABLE users ADD COLUMN password_hash VARCHAR(255)"))
+            conn.commit()
+        except Exception:
+            pass  # column already exists
+
     db = SessionLocal()
     try:
         seed_database(db)

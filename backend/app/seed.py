@@ -9,10 +9,12 @@ def seed_database(db: Session):
     """Ensure default host user and initial sample recent meetings exist."""
     user = db.query(User).first()
     if not user:
+        from .routers.auth import hash_password
         user = User(
             name="Kartik",
             email="kartik@zoom.us",
             avatar_url=None,
+            password_hash=hash_password("password123"),
             personal_meeting_id="248-679-1350",
             created_at=datetime.utcnow(),
         )
@@ -20,6 +22,10 @@ def seed_database(db: Session):
         db.commit()
         db.refresh(user)
         print("✅ Initial host user created successfully!")
+    elif not user.password_hash:
+        from .routers.auth import hash_password
+        user.password_hash = hash_password("password123")
+        db.commit()
 
     # Seed sample recent meetings if no meetings exist yet
     existing_meeting = db.query(Meeting).first()
