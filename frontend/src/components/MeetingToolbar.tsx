@@ -1,28 +1,48 @@
 'use client';
 
+import { useState } from 'react';
+
 interface MeetingToolbarProps {
   isMuted: boolean;
   isVideoOn: boolean;
   isParticipantsOpen: boolean;
+  isChatOpen: boolean;
+  isRecording: boolean;
+  isScreenSharing: boolean;
   participantCount: number;
+  unreadChatCount?: number;
   onToggleMute: () => void;
   onToggleVideo: () => void;
   onToggleParticipants: () => void;
-  onEndMeeting: () => void;
+  onToggleChat: () => void;
+  onToggleRecord: () => void;
   onShareScreen: () => void;
+  onEndMeeting: () => void;
+  onReaction: (emoji: string) => void;
 }
 
 export default function MeetingToolbar({
   isMuted,
   isVideoOn,
   isParticipantsOpen,
+  isChatOpen,
+  isRecording,
+  isScreenSharing,
   participantCount,
+  unreadChatCount = 0,
   onToggleMute,
   onToggleVideo,
   onToggleParticipants,
-  onEndMeeting,
+  onToggleChat,
+  onToggleRecord,
   onShareScreen,
+  onEndMeeting,
+  onReaction,
 }: MeetingToolbarProps) {
+  const [showReactionsMenu, setShowReactionsMenu] = useState(false);
+
+  const emojis = ['👍', '👏', '❤️', '😂', '🎉', '😮'];
+
   return (
     <div className="meeting-toolbar">
       {/* Mute/Unmute */}
@@ -77,14 +97,18 @@ export default function MeetingToolbar({
       <div className="toolbar-separator" />
 
       {/* Share Screen */}
-      <button className="toolbar-btn" onClick={onShareScreen} title="Share Screen">
+      <button
+        className={`toolbar-btn ${isScreenSharing ? 'active-share' : ''}`}
+        onClick={onShareScreen}
+        title={isScreenSharing ? 'Stop Share' : 'Share Screen'}
+      >
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <path d="M2 16V4a2 2 0 012-2h16a2 2 0 012 2v12" />
           <line x1="2" y1="20" x2="22" y2="20" />
           <polyline points="12 12 12 6" />
           <polyline points="9 9 12 6 15 9" />
         </svg>
-        <span>Share Screen</span>
+        <span>{isScreenSharing ? 'Stop Share' : 'Share Screen'}</span>
       </button>
 
       {/* Participants */}
@@ -123,33 +147,84 @@ export default function MeetingToolbar({
       </button>
 
       {/* Chat */}
-      <button className="toolbar-btn" title="Chat">
+      <button
+        className={`toolbar-btn ${isChatOpen ? 'active' : ''}`}
+        onClick={onToggleChat}
+        title="Chat"
+        style={{ position: 'relative' }}
+      >
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" />
         </svg>
         <span>Chat</span>
+        {unreadChatCount > 0 && !isChatOpen && (
+          <span style={{
+            position: 'absolute',
+            top: '4px',
+            right: '8px',
+            background: '#EF4444',
+            color: 'white',
+            fontSize: '10px',
+            fontWeight: '700',
+            width: '18px',
+            height: '18px',
+            borderRadius: '50%',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}>
+            {unreadChatCount}
+          </span>
+        )}
       </button>
 
-      {/* Reactions */}
-      <button className="toolbar-btn" title="Reactions">
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <circle cx="12" cy="12" r="10" />
-          <path d="M8 14s1.5 2 4 2 4-2 4-2" />
-          <line x1="9" y1="9" x2="9.01" y2="9" />
-          <line x1="15" y1="9" x2="15.01" y2="9" />
-        </svg>
-        <span>Reactions</span>
-      </button>
+      {/* Reactions Popover */}
+      <div style={{ position: 'relative' }}>
+        <button
+          className={`toolbar-btn ${showReactionsMenu ? 'active' : ''}`}
+          onClick={() => setShowReactionsMenu(!showReactionsMenu)}
+          title="Reactions"
+        >
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="10" />
+            <path d="M8 14s1.5 2 4 2 4-2 4-2" />
+            <line x1="9" y1="9" x2="9.01" y2="9" />
+            <line x1="15" y1="9" x2="15.01" y2="9" />
+          </svg>
+          <span>Reactions</span>
+        </button>
+
+        {showReactionsMenu && (
+          <div className="reactions-popover">
+            {emojis.map((emoji) => (
+              <button
+                key={emoji}
+                className="reaction-emoji-btn"
+                onClick={() => {
+                  onReaction(emoji);
+                  setShowReactionsMenu(false);
+                }}
+              >
+                {emoji}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
 
       <div className="toolbar-separator" />
 
       {/* Record */}
-      <button className="toolbar-btn" title="Record">
+      <button
+        className={`toolbar-btn ${isRecording ? 'recording-active' : ''}`}
+        onClick={onToggleRecord}
+        title={isRecording ? 'Stop Recording' : 'Record'}
+      >
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <circle cx="12" cy="12" r="10" />
-          <circle cx="12" cy="12" r="3" fill="currentColor" />
+          <circle cx="12" cy="12" r="3" fill={isRecording ? '#EF4444' : 'currentColor'} />
         </svg>
-        <span>Record</span>
+        <span>{isRecording ? 'Recording' : 'Record'}</span>
       </button>
 
       {/* End Call */}

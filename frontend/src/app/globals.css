@@ -2468,7 +2468,213 @@ nextjs-portal, [data-nextjs-toast], #nextjs-dev-tools, div[class*="next-dev"] {
   .toolbar-btn span { display: none; }
   .toolbar-btn-end { margin-left: 8px; padding: 10px 18px; }
   .participants-panel { position: absolute; right: 0; top: 0; bottom: 0; width: 280px; z-index: 10; }
+  .chat-panel { position: absolute; right: 0; top: 0; bottom: 0; width: 280px; z-index: 10; }
   .video-grid.grid-2, .video-grid.grid-3, .video-grid.grid-4, .video-grid.grid-5, .video-grid.grid-6 { grid-template-columns: 1fr; }
   .schedule-datetime-row { flex-wrap: wrap; }
   .schedule-duration-row { flex-wrap: wrap; }
+}
+
+/* ─── Chat Panel ────────────────────────────────────────── */
+.chat-panel {
+  width: 320px;
+  background: #242436;
+  border-left: 1px solid rgba(255, 255, 255, 0.06);
+  display: flex;
+  flex-direction: column;
+  animation: slideInRight 250ms ease;
+}
+
+.chat-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 20px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.chat-panel-header h3 {
+  font-size: 15px;
+  font-weight: 600;
+  color: white;
+}
+
+.chat-panel-close {
+  color: rgba(255, 255, 255, 0.5);
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  transition: all var(--transition-fast);
+}
+
+.chat-panel-close:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: white;
+}
+
+.chat-messages-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.chat-notice {
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 8px;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.5);
+  line-height: 1.4;
+  text-align: center;
+  margin-bottom: 8px;
+}
+
+.chat-message-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.chat-message-item.is-me {
+  align-items: flex-end;
+}
+
+.chat-message-meta {
+  display: flex;
+  gap: 8px;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.chat-message-item.is-me .chat-message-meta {
+  flex-direction: row-reverse;
+}
+
+.chat-message-meta .sender {
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.chat-message-bubble {
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.08);
+  color: white;
+  font-size: 13px;
+  max-width: 85%;
+  word-break: break-word;
+}
+
+.chat-message-item.is-me .chat-message-bubble {
+  background: var(--zoom-blue);
+  border-bottom-right-radius: 2px;
+}
+
+.chat-input-form {
+  display: flex;
+  padding: 14px 16px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  gap: 8px;
+  background: #1E1E2D;
+}
+
+.chat-input-form input {
+  flex: 1;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 20px;
+  padding: 8px 16px;
+  color: white;
+  font-size: 13px;
+  outline: none;
+}
+
+.chat-input-form input:focus {
+  border-color: var(--zoom-blue);
+}
+
+.chat-input-form button {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: var(--zoom-blue);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: opacity 150ms;
+}
+
+.chat-input-form button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ─── Reactions Popover ────────────────────────────────── */
+.reactions-popover {
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-bottom: 12px;
+  background: #2D2D3F;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 30px;
+  padding: 6px 12px;
+  display: flex;
+  gap: 8px;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.4);
+  animation: popIn 150ms cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  z-index: 100;
+}
+
+.reaction-emoji-btn {
+  font-size: 22px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 50%;
+  transition: transform 150ms ease;
+}
+
+.reaction-emoji-btn:hover {
+  transform: scale(1.3);
+}
+
+/* ─── Floating Emoji Reaction ───────────────────────────── */
+.floating-reaction {
+  position: absolute;
+  font-size: 48px;
+  pointer-events: none;
+  animation: floatUpAndFade 2.5s ease-out forwards;
+  z-index: 99;
+}
+
+@keyframes floatUpAndFade {
+  0% {
+    opacity: 1;
+    transform: translateY(0) scale(0.6);
+  }
+  50% {
+    opacity: 0.9;
+    transform: translateY(-80px) scale(1.2);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-160px) scale(1);
+  }
+}
+
+.toolbar-btn.recording-active {
+  color: #EF4444 !important;
+}
+
+.toolbar-btn.active-share {
+  color: #10B981 !important;
 }

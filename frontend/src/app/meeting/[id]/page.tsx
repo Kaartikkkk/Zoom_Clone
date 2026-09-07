@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef, use } from 'react';
 import { useRouter } from 'next/navigation';
 import MeetingToolbar from '@/components/MeetingToolbar';
 import ParticipantsPanel from '@/components/ParticipantsPanel';
+import ChatPanel, { type ChatMessage } from '@/components/ChatPanel';
 import { meetingApi, type Meeting, type Participant } from '@/lib/api';
 
 interface MeetingPageProps {
@@ -18,13 +19,28 @@ export default function MeetingRoom({ params }: MeetingPageProps) {
   const [isMuted, setIsMuted] = useState(false);
   const [isVideoOn, setIsVideoOn] = useState(true);
   const [showParticipants, setShowParticipants] = useState(false);
+  const [showChat, setShowChat] = useState(false);
+  const [unreadChatCount, setUnreadChatCount] = useState(0);
+  const [messages, setMessages] = useState<ChatMessage[]>([
+    {
+      id: '1',
+      sender: 'System',
+      text: 'Welcome to the Zoom meeting! Chat messages are end-to-end encrypted.',
+      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    },
+  ]);
   const [elapsedTime, setElapsedTime] = useState(0);
   const [error, setError] = useState('');
   const [myParticipantId, setMyParticipantId] = useState<number | null>(null);
   const [toast, setToast] = useState('');
   const [speakingId, setSpeakingId] = useState<number | null>(null);
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
+  const [screenStream, setScreenStream] = useState<MediaStream | null>(null);
+  const [isRecording, setIsRecording] = useState(false);
+  const [activeReactions, setActiveReactions] = useState<{ id: string; emoji: string; left: number }[]>([]);
+
   const localVideoRef = useRef<HTMLVideoElement | null>(null);
+  const screenVideoRef = useRef<HTMLVideoElement | null>(null);
 
   const showToast = (message: string) => {
     setToast(message);
@@ -141,6 +157,13 @@ export default function MeetingRoom({ params }: MeetingPageProps) {
       localVideoRef.current.srcObject = localStream;
     }
   }, [localStream, isVideoOn, participants]);
+
+  // Attach screenStream to video element when active
+  useEffect(() => {
+    if (screenVideoRef.current && screenStream) {
+      screenVideoRef.current.srcObject = screenStream;
+    }
+  }, [screenStream]);
 
   // Load meeting
   const loadMeeting = useCallback(async () => {
@@ -335,9 +358,96 @@ export default function MeetingRoom({ params }: MeetingPageProps) {
     }
   };
 
+  // Real Screen Sharing
+  const handleShareScreen = async () => {
+    if (screenStream) {
+      screenStream.getTracks().forEach((t) => t.stop());
+      setScreenStream(null);
+      showToast('Screen sharing stopped.');
+    } else {
+      try {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
+          showToast('Screen sharing is not supported in this browser.');
+          return;
+        }
+        const stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+        setScreenStream(stream);
+        showToast('Screen sharing active!');
+        stream.getVideoTracks()[0].onended = () => {
+          setScreenStream(null);
+          showToast('Screen sharing stopped.');
+        };
+      } catch (err: any) {
+        if (err.name !== 'NotAllowedError') {
+          showToast('Screen sharing failed or cancelled.');
+        }
+      }
+    }
+  };
+
+  // Live Chat Handling
+  const handleSendMessage = (text: string) => {
+    const me = participants.find(p => p.id === myParticipantId) || participants[0];
+    const newMsg: ChatMessage = {
+      id: String(Date.now()),
+      sender: me ? me.display_name : 'Me',
+      text,
+      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      isMe: true,
+    };
+    setMessages(prev => [...prev, newMsg]);
+
+    // Simulate response from another participant after 3 seconds for active feel
+    if (participants.length > 1) {
+      setTimeout(() => {
+        const replyParticipant = participants.find(p => p.id !== myParticipantId) || participants[1];
+        const replies = [
+          'Got it! 👍',
+          'Sounds good to me!',
+          'Could you repeat that link?',
+          'Thanks for sharing!',
+          'Great point!',
+        ];
+        const randomReply = replies[Math.floor(Math.random() * replies.length)];
+        const replyMsg: ChatMessage = {
+          id: String(Date.now() + 1),
+          sender: replyParticipant.display_name,
+          text: randomReply,
+          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          isMe: false,
+        };
+        setMessages(prev => [...prev, replyMsg]);
+        if (!showChat) {
+          setUnreadChatCount(prev => prev + 1);
+        }
+      }, 2500 + Math.random() * 2000);
+    }
+  };
+
+  // Reactions Handling
+  const handleReaction = (emoji: string) => {
+    const reactionId = String(Date.now()) + Math.random();
+    const leftPercent = 20 + Math.random() * 60;
+    setActiveReactions(prev => [...prev, { id: reactionId, emoji, left: leftPercent }]);
+    showToast(`Reaction sent: ${emoji}`);
+
+    setTimeout(() => {
+      setActiveReactions(prev => prev.filter(r => r.id !== reactionId));
+    }, 2500);
+  };
+
+  // Live Recording Toggle
+  const handleToggleRecord = () => {
+    setIsRecording(!isRecording);
+    showToast(!isRecording ? '● Recording started' : 'Recording stopped & saved');
+  };
+
   const handleEndMeeting = async () => {
     if (localStream) {
       localStream.getTracks().forEach(t => t.stop());
+    }
+    if (screenStream) {
+      screenStream.getTracks().forEach(t => t.stop());
     }
     if (meeting) {
       try {
@@ -455,7 +565,18 @@ export default function MeetingRoom({ params }: MeetingPageProps) {
   }
 
   return (
-    <div className="meeting-room">
+    <div className="meeting-room" style={{ position: 'relative', overflow: 'hidden' }}>
+      {/* Floating Emoji Reactions Overlay */}
+      {activeReactions.map((r) => (
+        <div
+          key={r.id}
+          className="floating-reaction"
+          style={{ left: `${r.left}%`, bottom: '90px' }}
+        >
+          {r.emoji}
+        </div>
+      ))}
+
       {/* Header */}
       <div className="meeting-room-header">
         <div className="meeting-info">
@@ -464,7 +585,8 @@ export default function MeetingRoom({ params }: MeetingPageProps) {
         </div>
 
         <div className="meeting-timer">
-          <span className="rec-dot"></span>
+          <span className="rec-dot" style={{ background: isRecording ? '#EF4444' : '#10B981' }}></span>
+          {isRecording && <span style={{ color: '#EF4444', fontWeight: 700, marginRight: '4px' }}>REC</span>}
           <span>{formatElapsed(elapsedTime)}</span>
         </div>
 
@@ -480,7 +602,46 @@ export default function MeetingRoom({ params }: MeetingPageProps) {
 
       {/* Body */}
       <div className="meeting-room-body">
-        <div className="video-grid-container">
+        <div className="video-grid-container" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          {/* Live Screen Share Display */}
+          {screenStream && (
+            <div style={{
+              width: '100%',
+              height: '50vh',
+              background: '#0F0F1A',
+              borderRadius: '12px',
+              overflow: 'hidden',
+              position: 'relative',
+              border: '2px solid #10B981'
+            }}>
+              <div style={{
+                position: 'absolute',
+                top: '12px',
+                left: '16px',
+                background: 'rgba(0,0,0,0.7)',
+                color: '#10B981',
+                padding: '4px 12px',
+                borderRadius: '6px',
+                fontSize: '12px',
+                fontWeight: 600,
+                zIndex: 5
+              }}>
+                ● You are sharing your screen
+              </div>
+              <video
+                ref={(el) => {
+                  screenVideoRef.current = el;
+                  if (el && screenStream) el.srcObject = screenStream;
+                }}
+                autoPlay
+                playsInline
+                className="video-tile-video"
+                style={{ transform: 'none' }}
+              />
+            </div>
+          )}
+
+          {/* Video Grid */}
           <div className={`video-grid ${getGridClass()}`}>
             {participants.map((p, i) => {
               const isMe = p.id === myParticipantId || (p.is_host && (!myParticipantId || myParticipantId === 101));
@@ -540,6 +701,14 @@ export default function MeetingRoom({ params }: MeetingPageProps) {
           onRemove={handleRemoveParticipant}
           isHost={true}
         />
+
+        {/* Chat Panel */}
+        <ChatPanel
+          isOpen={showChat}
+          onClose={() => setShowChat(false)}
+          messages={messages}
+          onSendMessage={handleSendMessage}
+        />
       </div>
 
       {/* Toolbar */}
@@ -547,12 +716,28 @@ export default function MeetingRoom({ params }: MeetingPageProps) {
         isMuted={isMuted}
         isVideoOn={isVideoOn}
         isParticipantsOpen={showParticipants}
+        isChatOpen={showChat}
+        isRecording={isRecording}
+        isScreenSharing={!!screenStream}
         participantCount={participants.length}
+        unreadChatCount={unreadChatCount}
         onToggleMute={handleToggleMute}
         onToggleVideo={handleToggleVideo}
-        onToggleParticipants={() => setShowParticipants(!showParticipants)}
+        onToggleParticipants={() => {
+          setShowParticipants(!showParticipants);
+          if (!showParticipants) setShowChat(false);
+        }}
+        onToggleChat={() => {
+          setShowChat(!showChat);
+          if (!showChat) {
+            setShowParticipants(false);
+            setUnreadChatCount(0);
+          }
+        }}
+        onToggleRecord={handleToggleRecord}
+        onShareScreen={handleShareScreen}
         onEndMeeting={handleEndMeeting}
-        onShareScreen={() => showToast('Screen sharing is a placeholder feature')}
+        onReaction={handleReaction}
       />
 
       {/* Toast */}
@@ -560,4 +745,5 @@ export default function MeetingRoom({ params }: MeetingPageProps) {
     </div>
   );
 }
+
 
