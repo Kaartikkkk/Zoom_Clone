@@ -11,6 +11,24 @@ interface MeetingPageProps {
   params: Promise<{ id: string }>;
 }
 
+const ICE_SERVERS: RTCConfiguration = {
+  iceServers: [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+    { urls: 'stun:stun2.l.google.com:19302' },
+    { urls: 'stun:stun3.l.google.com:19302' },
+    { urls: 'stun:stun4.l.google.com:19302' },
+  ],
+};
+
+const getWsUrl = (meetingId: string, participantId: number) => {
+  const apiBase = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+  const cleanBase = apiBase.replace(/^https?:\/\//, '');
+  const wsProto = apiBase.startsWith('https') ? 'wss' : 'ws';
+  const cleanId = meetingId.replace(/-/g, '');
+  return `${wsProto}://${cleanBase}/ws/meeting/${cleanId}/${participantId}`;
+};
+
 export default function MeetingRoom({ params }: MeetingPageProps) {
   const { id } = use(params);
   const router = useRouter();
@@ -38,14 +56,135 @@ export default function MeetingRoom({ params }: MeetingPageProps) {
   const [screenStream, setScreenStream] = useState<MediaStream | null>(null);
   const [isRecording, setIsRecording] = useState(false);
   const [activeReactions, setActiveReactions] = useState<{ id: string; emoji: string; left: number }[]>([]);
+  const [remoteStreamsMap, setRemoteStreamsMap] = useState<{ [id: string]: MediaStream }>({});
 
   const localVideoRef = useRef<HTMLVideoElement | null>(null);
   const screenVideoRef = useRef<HTMLVideoElement | null>(null);
+  const peerConnectionsRef = useRef<Map<string, RTCPeerConnection>>(new Map());
+  const remoteStreamsRef = useRef<Map<string, MediaStream>>(new Map());
+  const wsRef = useRef<WebSocket | null>(null);
 
   const showToast = (message: string) => {
     setToast(message);
     setTimeout(() => setToast(''), 3000);
   };
+
+  const createPeerConnection = useCallback((targetPeerId: string, stream: MediaStream | null) => {
+    if (peerConnectionsRef.current.has(targetPeerId)) {
+      return peerConnectionsRef.current.get(targetPeerId)!;
+    }
+
+    const pc = new RTCPeerConnection(ICE_SERVERS);
+    peerConnectionsRef.current.set(targetPeerId, pc);
+
+    if (stream) {
+      stream.getTracks().forEach((track) => {
+        pc.addTrack(track, stream);
+      });
+    }
+
+    pc.ontrack = (event) => {
+      let remoteStream = remoteStreamsRef.current.get(targetPeerId);
+      if (!remoteStream) {
+        remoteStream = new MediaStream();
+        remoteStreamsRef.current.set(targetPeerId, remoteStream);
+      }
+      event.streams[0]?.getTracks().forEach((track) => {
+        if (!remoteStream!.getTracks().some((t) => t.id === track.id)) {
+          remoteStream!.addTrack(track);
+        }
+      });
+      setRemoteStreamsMap({ ...Object.fromEntries(remoteStreamsRef.current) });
+    };
+
+    pc.onicecandidate = (event) => {
+      if (event.candidate && wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+        wsRef.current.send(
+          JSON.stringify({
+            type: 'candidate',
+            target: targetPeerId,
+            candidate: event.candidate,
+          })
+        );
+      }
+    };
+
+    return pc;
+  }, []);
+
+  // WebRTC Signaling via WebSocket
+  useEffect(() => {
+    if (!meeting || !myParticipantId) return;
+
+    const wsUrl = getWsUrl(meeting.meeting_id, myParticipantId);
+    let ws: WebSocket;
+    try {
+      ws = new WebSocket(wsUrl);
+      wsRef.current = ws;
+    } catch (e) {
+      console.warn('WebSocket connection failed:', e);
+      return;
+    }
+
+    ws.onmessage = async (event) => {
+      try {
+        const msg = JSON.parse(event.data);
+        const senderId = String(msg.sender);
+
+        if (msg.type === 'peer-joined') {
+          const pc = createPeerConnection(senderId, localStream);
+          const offer = await pc.createOffer();
+          await pc.setLocalDescription(offer);
+          ws.send(
+            JSON.stringify({
+              type: 'offer',
+              target: senderId,
+              offer,
+            })
+          );
+        } else if (msg.type === 'offer') {
+          const pc = createPeerConnection(senderId, localStream);
+          await pc.setRemoteDescription(new RTCSessionDescription(msg.offer));
+          const answer = await pc.createAnswer();
+          await pc.setLocalDescription(answer);
+          ws.send(
+            JSON.stringify({
+              type: 'answer',
+              target: senderId,
+              answer,
+            })
+          );
+        } else if (msg.type === 'answer') {
+          const pc = peerConnectionsRef.current.get(senderId);
+          if (pc) {
+            await pc.setRemoteDescription(new RTCSessionDescription(msg.answer));
+          }
+        } else if (msg.type === 'candidate') {
+          const pc = peerConnectionsRef.current.get(senderId);
+          if (pc) {
+            await pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
+          }
+        } else if (msg.type === 'peer-left') {
+          const pc = peerConnectionsRef.current.get(senderId);
+          if (pc) {
+            pc.close();
+            peerConnectionsRef.current.delete(senderId);
+          }
+          remoteStreamsRef.current.delete(senderId);
+          setRemoteStreamsMap({ ...Object.fromEntries(remoteStreamsRef.current) });
+        }
+      } catch (err) {
+        console.error('Signaling error:', err);
+      }
+    };
+
+    return () => {
+      ws.close();
+      peerConnectionsRef.current.forEach((pc) => pc.close());
+      peerConnectionsRef.current.clear();
+      remoteStreamsRef.current.clear();
+    };
+  }, [meeting, myParticipantId, localStream, createPeerConnection]);
 
   // Request WebRTC Camera & Microphone stream
   useEffect(() => {
@@ -569,6 +708,9 @@ export default function MeetingRoom({ params }: MeetingPageProps) {
             {participants.map((p, i) => {
               const isMe = p.id === myParticipantId || (p.is_host && (!myParticipantId || myParticipantId === 101));
               const showLiveVideo = isMe && isVideoOn && localStream && localStream.getVideoTracks().some(t => t.enabled);
+              const pIdStr = String(p.id);
+              const remoteStream = remoteStreamsMap[pIdStr];
+              const showRemoteVideo = !isMe && remoteStream && remoteStream.getVideoTracks().length > 0;
 
               return (
                 <div
@@ -587,6 +729,18 @@ export default function MeetingRoom({ params }: MeetingPageProps) {
                       playsInline
                       muted
                       className="video-tile-video"
+                    />
+                  ) : showRemoteVideo ? (
+                    <video
+                      ref={(el) => {
+                        if (el && remoteStream && el.srcObject !== remoteStream) {
+                          el.srcObject = remoteStream;
+                        }
+                      }}
+                      autoPlay
+                      playsInline
+                      className="video-tile-video"
+                      style={{ transform: 'none' }}
                     />
                   ) : (
                     <div
