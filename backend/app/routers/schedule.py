@@ -98,7 +98,9 @@ def list_scheduled_meetings(db: Session = Depends(get_db)):
 @router.delete("/{schedule_id}", response_model=MessageResponse)
 def cancel_scheduled_meeting(schedule_id: int, db: Session = Depends(get_db)):
     """Cancel a scheduled meeting."""
-    schedule = db.query(ScheduledMeeting).filter(ScheduledMeeting.id == schedule_id).first()
+    schedule = db.query(ScheduledMeeting).filter(
+        (ScheduledMeeting.id == schedule_id) | (ScheduledMeeting.meeting_id == schedule_id)
+    ).first()
     if not schedule:
         raise HTTPException(status_code=404, detail="Scheduled meeting not found")
 
