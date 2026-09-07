@@ -125,8 +125,8 @@ export default function ParticipantsPanel({
                 <button
                   className="participant-control-btn"
                   onClick={() => onRemove(p.id)}
-                  title="Remove"
-                  style={{ color: 'rgba(255,255,255,0.3)' }}
+                  title="Remove participant"
+                  style={{ color: '#EF4444', opacity: 0.9 }}
                 >
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <circle cx="12" cy="12" r="10" />

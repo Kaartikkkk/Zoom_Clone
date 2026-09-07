@@ -176,7 +176,7 @@ def get_meeting(meeting_id: str, db: Session = Depends(get_db)):
 
 
 @router.patch("/{meeting_id}", response_model=MeetingResponse)
-def update_meeting(meeting_id: str, data: MeetingUpdate, db: Session = Depends(get_db)):
+async def update_meeting(meeting_id: str, data: MeetingUpdate, db: Session = Depends(get_db)):
     """Update meeting status or title."""
     meeting = db.query(Meeting).filter(Meeting.meeting_id == meeting_id).first()
     if not meeting:
@@ -204,13 +204,11 @@ def update_meeting(meeting_id: str, data: MeetingUpdate, db: Session = Depends(g
             ).update({"left_at": datetime.utcnow()})
             clean_id = meeting.meeting_id.replace("-", "")
             try:
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    loop.create_task(manager.broadcast_to_room(
-                        clean_id,
-                        {"type": "meeting-ended"},
-                        "host"
-                    ))
+                await manager.broadcast_to_room(
+                    clean_id,
+                    {"type": "meeting-ended"},
+                    "host"
+                )
             except Exception:
                 pass
 
@@ -266,7 +264,7 @@ def join_meeting(meeting_id: str, data: JoinMeetingRequest, db: Session = Depend
 
 
 @router.post("/{meeting_id}/leave", response_model=MessageResponse)
-def leave_meeting(meeting_id: str, participant_id: int = Query(...), db: Session = Depends(get_db)):
+async def leave_meeting(meeting_id: str, participant_id: int = Query(...), db: Session = Depends(get_db)):
     """Leave a meeting."""
     participant = db.query(Participant).filter(Participant.id == participant_id).first()
     if not participant:
@@ -277,13 +275,11 @@ def leave_meeting(meeting_id: str, participant_id: int = Query(...), db: Session
     clean_id = meeting_id.replace("-", "")
     manager.disconnect(clean_id, str(participant_id))
     try:
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            loop.create_task(manager.broadcast_to_room(
-                clean_id,
-                {"type": "peer-left", "sender": str(participant_id)},
-                str(participant_id)
-            ))
+        await manager.broadcast_to_room(
+            clean_id,
+            {"type": "peer-left", "sender": str(participant_id)},
+            str(participant_id)
+        )
     except Exception:
         pass
 
@@ -316,7 +312,7 @@ def get_participants(meeting_id: str, db: Session = Depends(get_db)):
 
 
 @router.patch("/{meeting_id}/participants/{participant_id}", response_model=ParticipantResponse)
-def update_participant(
+async def update_participant(
     meeting_id: str,
     participant_id: int,
     data: ParticipantUpdate,
@@ -334,11 +330,26 @@ def update_participant(
 
     db.commit()
     db.refresh(participant)
+
+    clean_id = meeting_id.replace("-", "")
+    try:
+        await manager.broadcast_to_room(
+            clean_id,
+            {
+                "type": "participant-update",
+                "participantId": participant_id,
+                "is_muted": participant.is_muted,
+                "is_video_on": participant.is_video_on,
+            }
+        )
+    except Exception as e:
+        print(f"Error broadcasting participant-update: {e}")
+
     return participant
 
 
 @router.delete("/{meeting_id}/participants/{participant_id}", response_model=MessageResponse)
-def remove_participant(meeting_id: str, participant_id: int, db: Session = Depends(get_db)):
+async def remove_participant(meeting_id: str, participant_id: int, db: Session = Depends(get_db)):
     """Remove a participant from the meeting (host control)."""
     participant = db.query(Participant).filter(Participant.id == participant_id).first()
     if not participant:
@@ -348,26 +359,24 @@ def remove_participant(meeting_id: str, participant_id: int, db: Session = Depen
 
     clean_id = meeting_id.replace("-", "")
     try:
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            loop.create_task(manager.send_to_peer(
-                clean_id,
-                str(participant_id),
-                {"type": "removed-from-meeting"}
-            ))
-            loop.create_task(manager.broadcast_to_room(
-                clean_id,
-                {"type": "peer-left", "sender": str(participant_id)},
-                str(participant_id)
-            ))
-    except Exception:
-        pass
+        await manager.send_to_peer(
+            clean_id,
+            str(participant_id),
+            {"type": "removed-from-meeting"}
+        )
+        await manager.broadcast_to_room(
+            clean_id,
+            {"type": "peer-left", "sender": str(participant_id)},
+            str(participant_id)
+        )
+    except Exception as e:
+        print(f"Error notifying removal to room: {e}")
 
     return {"message": f"Removed {participant.display_name} from the meeting"}
 
 
 @router.post("/{meeting_id}/mute-all", response_model=MessageResponse)
-def mute_all_participants(meeting_id: str, db: Session = Depends(get_db)):
+async def mute_all_participants(meeting_id: str, db: Session = Depends(get_db)):
     """Mute all participants (host control)."""
     meeting = db.query(Meeting).filter(Meeting.meeting_id == meeting_id).first()
     if not meeting:
@@ -386,4 +395,14 @@ def mute_all_participants(meeting_id: str, db: Session = Depends(get_db)):
         Participant.is_host == False
     ).update({"is_muted": True})
     db.commit()
+
+    clean_id = meeting.meeting_id.replace("-", "")
+    try:
+        await manager.broadcast_to_room(
+            clean_id,
+            {"type": "mute-all"}
+        )
+    except Exception as e:
+        print(f"Error broadcasting mute-all: {e}")
+
     return {"message": "All participants muted"}

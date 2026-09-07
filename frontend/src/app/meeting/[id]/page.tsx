@@ -470,6 +470,33 @@ export default function MeetingRoom({ params }: MeetingPageProps) {
                 return p;
               })
             );
+          } else if (msg.type === 'mute-all') {
+            const isHostUser =
+              Boolean(participants.find((p) => p.id === myParticipantId)?.is_host) ||
+              (typeof window !== 'undefined' &&
+                sessionStorage.getItem(`zoom_host_${(meeting?.meeting_id || id || '').replace(/-/g, '')}`) === 'true');
+            if (!isHostUser) {
+              setIsMuted(true);
+              if (localStreamRef.current) {
+                localStreamRef.current.getAudioTracks().forEach((t) => (t.enabled = false));
+              }
+              showToast('You have been muted by the host');
+            }
+            setParticipants((prev) =>
+              prev.map((p) => (p.is_host ? p : { ...p, is_muted: true }))
+            );
+          } else if (msg.type === 'participant-mute') {
+            if (String(myParticipantId) === String(msg.target)) {
+              const mutedVal = Boolean(msg.is_muted);
+              setIsMuted(mutedVal);
+              if (localStreamRef.current) {
+                localStreamRef.current.getAudioTracks().forEach((t) => (t.enabled = !mutedVal));
+              }
+              showToast(mutedVal ? 'You have been muted by the host' : 'You have been unmuted by the host');
+            }
+            setParticipants((prev) =>
+              prev.map((p) => (String(p.id) === String(msg.target) ? { ...p, is_muted: Boolean(msg.is_muted) } : p))
+            );
           } else if (msg.type === 'peer-left') {
             console.log(`[WebRTC] Peer ${senderId} left the room`);
             const pc = peerConnectionsRef.current.get(senderId);
@@ -486,11 +513,37 @@ export default function MeetingRoom({ params }: MeetingPageProps) {
             setTimeout(() => {
               window.location.href = '/';
             }, 1500);
-          } else if (msg.type === 'removed-from-meeting') {
+          } else if (
+            msg.type === 'removed-from-meeting' ||
+            (msg.type === 'remove-participant' && String(msg.target) === String(myParticipantId))
+          ) {
             showToast('You have been removed from the meeting by the host.');
+            isLeavingRef.current = true;
+            if (localStreamRef.current) {
+              localStreamRef.current.getTracks().forEach((t) => t.stop());
+            }
+            if (screenStream) {
+              screenStream.getTracks().forEach((t) => t.stop());
+            }
+            if (typeof window !== 'undefined') {
+              const cleanId = (meeting?.meeting_id || id || '').replace(/-/g, '');
+              sessionStorage.removeItem(`zoom_participant_${cleanId}`);
+              sessionStorage.removeItem(`zoom_name_${cleanId}`);
+              sessionStorage.removeItem(`zoom_host_${cleanId}`);
+            }
             setTimeout(() => {
               window.location.href = '/';
-            }, 1500);
+            }, 1000);
+          } else if (msg.type === 'remove-participant' && String(msg.target) !== String(myParticipantId)) {
+            const removedId = String(msg.target);
+            const pc = peerConnectionsRef.current.get(removedId);
+            if (pc) {
+              pc.close();
+              peerConnectionsRef.current.delete(removedId);
+            }
+            remoteStreamsRef.current.delete(removedId);
+            setRemoteStreamsMap({ ...Object.fromEntries(remoteStreamsRef.current) });
+            setParticipants((prev) => prev.filter((p) => String(p.id) !== removedId));
           }
         } catch (err) {
           console.error('Signaling error:', err);
@@ -963,6 +1016,10 @@ export default function MeetingRoom({ params }: MeetingPageProps) {
     );
     showToast('All participants muted');
 
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: 'mute-all' }));
+    }
+
     if (meeting) {
       try {
         await meetingApi.muteAll(meeting.meeting_id);
@@ -977,6 +1034,16 @@ export default function MeetingRoom({ params }: MeetingPageProps) {
       prev.map((p) => (p.id === participantId ? { ...p, is_muted: isMutedNew } : p))
     );
 
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(
+        JSON.stringify({
+          type: 'participant-mute',
+          target: String(participantId),
+          is_muted: isMutedNew,
+        })
+      );
+    }
+
     if (meeting) {
       try {
         await meetingApi.updateParticipant(meeting.meeting_id, participantId, {
@@ -989,8 +1056,25 @@ export default function MeetingRoom({ params }: MeetingPageProps) {
   };
 
   const handleRemoveParticipant = async (participantId: number) => {
+    const pIdStr = String(participantId);
     setParticipants((prev) => prev.filter((p) => p.id !== participantId));
+    const pc = peerConnectionsRef.current.get(pIdStr);
+    if (pc) {
+      pc.close();
+      peerConnectionsRef.current.delete(pIdStr);
+    }
+    remoteStreamsRef.current.delete(pIdStr);
+    setRemoteStreamsMap({ ...Object.fromEntries(remoteStreamsRef.current) });
     showToast('Participant removed');
+
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(
+        JSON.stringify({
+          type: 'remove-participant',
+          target: pIdStr,
+        })
+      );
+    }
 
     if (meeting) {
       try {
@@ -1156,7 +1240,10 @@ export default function MeetingRoom({ params }: MeetingPageProps) {
     );
   }
 
-  const isCurrentHost = !!participants.find((p) => p.id === myParticipantId)?.is_host;
+  const isCurrentHost =
+    Boolean(participants.find((p) => p.id === myParticipantId)?.is_host) ||
+    (typeof window !== 'undefined' &&
+      sessionStorage.getItem(`zoom_host_${(meeting?.meeting_id || id || '').replace(/-/g, '')}`) === 'true');
 
   return (
     <div className="meeting-room">

@@ -28,10 +28,10 @@ class ConnectionManager:
             except Exception:
                 pass
 
-    async def broadcast_to_room(self, meeting_id: str, message: dict, sender_id: str):
+    async def broadcast_to_room(self, meeting_id: str, message: dict, sender_id: str = None):
         if meeting_id in self.active_connections:
             for pid, connection in list(self.active_connections[meeting_id].items()):
-                if pid != sender_id:
+                if sender_id is None or pid != str(sender_id):
                     try:
                         await connection.send_json(message)
                     except Exception:
