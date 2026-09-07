@@ -88,6 +88,19 @@ async def websocket_endpoint(websocket: WebSocket, meeting_id: str, participant_
 
     except WebSocketDisconnect:
         manager.disconnect(clean_id, str(participant_id))
+        
+        # Mark participant left_at in SQLite database
+        try:
+            pid = int(participant_id)
+            db = SessionLocal()
+            try:
+                db.query(Participant).filter(Participant.id == pid).update({"left_at": datetime.utcnow()})
+                db.commit()
+            finally:
+                db.close()
+        except Exception:
+            pass
+
         await manager.broadcast_to_room(
             clean_id,
             {"type": "peer-left", "sender": str(participant_id)},

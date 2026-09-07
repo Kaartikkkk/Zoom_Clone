@@ -15,9 +15,22 @@ const ICE_SERVERS: RTCConfiguration = {
   iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
-    { urls: 'stun:stun2.l.google.com:19302' },
-    { urls: 'stun:stun3.l.google.com:19302' },
-    { urls: 'stun:stun4.l.google.com:19302' },
+    { urls: 'stun:stun.cloudflare.com:3478' },
+    {
+      urls: 'turn:openrelay.metered.ca:80',
+      username: 'openrelay',
+      credential: 'openrelay',
+    },
+    {
+      urls: 'turn:openrelay.metered.ca:443',
+      username: 'openrelay',
+      credential: 'openrelay',
+    },
+    {
+      urls: 'turn:openrelay.metered.ca:443?transport=tcp',
+      username: 'openrelay',
+      credential: 'openrelay',
+    },
   ],
 };
 
@@ -184,8 +197,8 @@ export default function MeetingRoom({ params }: MeetingPageProps) {
 
   // Sync peer connection tracks when localStream updates
   useEffect(() => {
-    if (!localStream) return;
-    peerConnectionsRef.current.forEach((pc) => {
+    if (!localStream || !myParticipantId) return;
+    peerConnectionsRef.current.forEach((pc, targetPeerId) => {
       localStream.getTracks().forEach((track) => {
         const senders = pc.getSenders();
         const existing = senders.find((s) => s.track?.kind === track.kind);
@@ -197,8 +210,24 @@ export default function MeetingRoom({ params }: MeetingPageProps) {
           } catch (e) { /* ignore */ }
         }
       });
+
+      // If we are the designated initiator and the connection is stable, renegotiate with the new tracks
+      if (Number(myParticipantId) < Number(targetPeerId) && pc.signalingState === 'stable') {
+        pc.createOffer().then((offer) => {
+          pc.setLocalDescription(offer);
+          if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+            wsRef.current.send(
+              JSON.stringify({
+                type: 'offer',
+                target: targetPeerId,
+                offer,
+              })
+            );
+          }
+        }).catch(() => {});
+      }
     });
-  }, [localStream]);
+  }, [localStream, myParticipantId]);
 
   // WebRTC Signaling via WebSocket
   useEffect(() => {
@@ -823,7 +852,7 @@ export default function MeetingRoom({ params }: MeetingPageProps) {
           {/* Video Grid */}
           <div className={`video-grid ${getGridClass()}`}>
             {participants.map((p, i) => {
-              const isMe = p.id === myParticipantId || (p.is_host && (!myParticipantId || myParticipantId === 101));
+              const isMe = myParticipantId !== null && p.id === myParticipantId;
               const showLiveVideo = isMe && isVideoOn && localStream && localStream.getVideoTracks().some(t => t.enabled);
               const pIdStr = String(p.id);
               const remoteStream = remoteStreamsMap[pIdStr];
