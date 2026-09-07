@@ -1,4 +1,5 @@
 import json
+import asyncio
 from datetime import datetime
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -26,8 +27,7 @@ origins = [
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
-    allow_origin_regex=r"https://.*\.vercel\.app",
+    allow_origins=["*"],  # Allow all origins for seamless cross-device mobile/P2P testing
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -55,6 +55,30 @@ def health_check():
     return {"status": "ok", "service": "zoom-clone-api"}
 
 
+async def _delayed_disconnect_cleanup(clean_id: str, participant_id: str):
+    """Wait 8s before declaring a disconnected participant left, allowing automatic reconnection without killing WebRTC stream."""
+    await asyncio.sleep(8)
+    if clean_id in manager.active_connections and participant_id in manager.active_connections[clean_id]:
+        return
+
+    try:
+        pid = int(participant_id)
+        db = SessionLocal()
+        try:
+            db.query(Participant).filter(Participant.id == pid).update({"left_at": datetime.utcnow()})
+            db.commit()
+        finally:
+            db.close()
+    except Exception as e:
+        print(f"Error marking participant left on delayed disconnect: {e}")
+
+    await manager.broadcast_to_room(
+        clean_id,
+        {"type": "peer-left", "sender": str(participant_id)},
+        str(participant_id)
+    )
+
+
 @app.websocket("/ws/meeting/{meeting_id}/{participant_id}")
 async def websocket_endpoint(websocket: WebSocket, meeting_id: str, participant_id: str):
     clean_id = meeting_id.replace("-", "")
@@ -80,6 +104,10 @@ async def websocket_endpoint(websocket: WebSocket, meeting_id: str, participant_
             data = await websocket.receive_text()
             msg = json.loads(data)
             msg["sender"] = str(participant_id)
+
+            if msg.get("type") == "ping":
+                await websocket.send_json({"type": "pong"})
+                continue
 
             if msg.get("type") == "leave":
                 # Handle graceful leave from client
@@ -110,23 +138,4 @@ async def websocket_endpoint(websocket: WebSocket, meeting_id: str, participant_
 
     except WebSocketDisconnect:
         manager.disconnect(clean_id, str(participant_id))
-        
-        # Mark participant left_at in SQLite database
-        try:
-            pid = int(participant_id)
-            db = SessionLocal()
-            try:
-                db.query(Participant).filter(Participant.id == pid).update({"left_at": datetime.utcnow()})
-                db.commit()
-            finally:
-                db.close()
-        except Exception as e:
-            print(f"Error marking participant left on disconnect: {e}")
-
-        await manager.broadcast_to_room(
-            clean_id,
-            {"type": "peer-left", "sender": str(participant_id)},
-            str(participant_id)
-        )
-
-
+        asyncio.create_task(_delayed_disconnect_cleanup(clean_id, str(participant_id)))
