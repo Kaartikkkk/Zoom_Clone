@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import MeetingToolbar from '@/components/MeetingToolbar';
 import ParticipantsPanel from '@/components/ParticipantsPanel';
 import ChatPanel, { type ChatMessage } from '@/components/ChatPanel';
-import { meetingApi, type Meeting, type Participant } from '@/lib/api';
+import { meetingApi, getApiBase, type Meeting, type Participant } from '@/lib/api';
 
 interface MeetingPageProps {
   params: Promise<{ id: string }>;
@@ -35,7 +35,7 @@ const ICE_SERVERS: RTCConfiguration = {
 };
 
 const getWsUrl = (meetingId: string, participantId: number) => {
-  const apiBase = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+  const apiBase = getApiBase();
   const cleanBase = apiBase.replace(/^https?:\/\//, '').replace(/\/+$/, '');
   const wsProto = apiBase.startsWith('https') ? 'wss' : 'ws';
   const cleanId = meetingId.replace(/-/g, '');
@@ -994,7 +994,7 @@ export default function MeetingRoom({ params }: MeetingPageProps) {
 
     // 4. If host, mark meeting ended
     const myParticipant = participants.find((p) => p.id === myParticipantId);
-    if (meeting && myParticipant?.is_host) {
+    if (meeting && (isCurrentHost || myParticipant?.is_host)) {
       try {
         await meetingApi.update(meeting.meeting_id, { status: 'ended' });
       } catch (e) { /* ignore */ }

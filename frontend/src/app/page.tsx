@@ -16,6 +16,7 @@ export default function Home() {
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [upcomingMeetings, setUpcomingMeetings] = useState<UpcomingMeeting[]>([]);
   const [recentMeetings, setRecentMeetings] = useState<Meeting[]>([]);
+  const [dashboardTab, setDashboardTab] = useState<'upcoming' | 'recent'>('upcoming');
   const [showNewMeeting, setShowNewMeeting] = useState(false);
   const [showJoinMeeting, setShowJoinMeeting] = useState(false);
   const [showSchedule, setShowSchedule] = useState(false);
@@ -438,109 +439,115 @@ export default function Home() {
             {/* Light Schedule Container Card */}
             <div id="upcoming" className="schedule-card-container">
               <div className="schedule-card-header">
-                <button className="schedule-add-btn" onClick={() => setShowSchedule(true)} title="Add Meeting">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                    <line x1="12" y1="5" x2="12" y2="19" />
-                    <line x1="5" y1="12" x2="19" y2="12" />
-                  </svg>
-                </button>
-                <button className="schedule-date-dropdown" onClick={() => setSelectedDate(new Date())}>
-                  <span suppressHydrationWarning>
-                    {mounted && (selectedDate.toDateString() === new Date().toDateString()
-                      ? `Today, ${selectedDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
-                      : selectedDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }))}
-                  </span>
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <polyline points="6 9 12 15 18 9" />
-                  </svg>
-                </button>
-              </div>
-
-              <div className="schedule-card-nav">
-                <button className="nav-today-btn" onClick={() => setSelectedDate(new Date())}>
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <rect x="3" y="4" width="18" height="18" rx="2" />
-                    <line x1="16" y1="2" x2="16" y2="6" />
-                    <line x1="8" y1="2" x2="8" y2="6" />
-                  </svg>
-                  Today
-                </button>
-                <div className="nav-arrows">
+                <div className="schedule-tabs-toggle">
                   <button
-                    className="arrow-btn"
-                    title="Previous Day"
-                    onClick={() => {
-                      const prev = new Date(selectedDate);
-                      prev.setDate(prev.getDate() - 1);
-                      setSelectedDate(prev);
-                    }}
+                    className={`schedule-tab-btn ${dashboardTab === 'upcoming' ? 'active' : ''}`}
+                    onClick={() => setDashboardTab('upcoming')}
                   >
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <polyline points="15 18 9 12 15 6" />
-                    </svg>
+                    Upcoming ({upcomingMeetings.length})
                   </button>
                   <button
-                    className="arrow-btn"
-                    title="Next Day"
-                    onClick={() => {
-                      const next = new Date(selectedDate);
-                      next.setDate(next.getDate() + 1);
-                      setSelectedDate(next);
-                    }}
+                    className={`schedule-tab-btn ${dashboardTab === 'recent' ? 'active' : ''}`}
+                    onClick={() => setDashboardTab('recent')}
                   >
+                    Recent ({recentMeetings.length})
+                  </button>
+                </div>
+
+                {dashboardTab === 'upcoming' ? (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <button className="schedule-add-btn" onClick={() => setShowSchedule(true)} title="Add Meeting">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                        <line x1="12" y1="5" x2="12" y2="19" />
+                        <line x1="5" y1="12" x2="19" y2="12" />
+                      </svg>
+                    </button>
+                    <button className="schedule-date-dropdown" onClick={() => setSelectedDate(new Date())}>
+                      <span suppressHydrationWarning>
+                        {mounted && (selectedDate.toDateString() === new Date().toDateString()
+                          ? `Today, ${selectedDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
+                          : selectedDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }))}
+                      </span>
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <polyline points="6 9 12 15 18 9" />
+                      </svg>
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    className="schedule-action-btn"
+                    style={{ margin: 0, padding: '4px 10px', fontSize: '12px' }}
+                    onClick={() => handleOpenNewMeeting()}
+                  >
+                    + New Meeting
+                  </button>
+                )}
+              </div>
+
+              {dashboardTab === 'upcoming' && (
+                <div className="schedule-card-nav">
+                  <button className="nav-today-btn" onClick={() => setSelectedDate(new Date())}>
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <polyline points="9 18 15 12 9 6" />
+                      <rect x="3" y="4" width="18" height="18" rx="2" />
+                      <line x1="16" y1="2" x2="16" y2="6" />
+                      <line x1="8" y1="2" x2="8" y2="6" />
+                    </svg>
+                    Today
+                  </button>
+                  <div className="nav-arrows">
+                    <button
+                      className="arrow-btn"
+                      title="Previous Day"
+                      onClick={() => {
+                        const prev = new Date(selectedDate);
+                        prev.setDate(prev.getDate() - 1);
+                        setSelectedDate(prev);
+                      }}
+                    >
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <polyline points="15 18 9 12 15 6" />
+                      </svg>
+                    </button>
+                    <button
+                      className="arrow-btn"
+                      title="Next Day"
+                      onClick={() => {
+                        const next = new Date(selectedDate);
+                        next.setDate(next.getDate() + 1);
+                        setSelectedDate(next);
+                      }}
+                    >
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <polyline points="9 18 15 12 9 6" />
+                      </svg>
+                    </button>
+                  </div>
+                  <button className="more-opt-btn" onClick={() => loadData()} title="Refresh meetings">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <circle cx="12" cy="12" r="1" />
+                      <circle cx="19" cy="12" r="1" />
+                      <circle cx="5" cy="12" r="1" />
                     </svg>
                   </button>
                 </div>
-                <button className="more-opt-btn" onClick={() => loadData()} title="Refresh meetings">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <circle cx="12" cy="12" r="1" />
-                    <circle cx="19" cy="12" r="1" />
-                    <circle cx="5" cy="12" r="1" />
-                  </svg>
-                </button>
-              </div>
+              )}
 
               <div className="schedule-card-body">
-                {(() => {
-                  const dateStr = getYYYYMMDD(selectedDate);
-                  const dayMeetings = upcomingMeetings.filter(
-                    (m) => m.scheduled_date && m.scheduled_date.startsWith(dateStr)
-                  );
-                  const activeMeetings = dayMeetings.length > 0 ? dayMeetings : upcomingMeetings;
-
-                  if (activeMeetings.length === 0) {
-                    return (
-                      <div className="schedule-empty-state">
-                        <div className="umbrella-illustration">
-                          <svg width="140" height="110" viewBox="0 0 200 180" fill="none">
-                            {/* Oval ground shadow */}
-                            <ellipse cx="115" cy="155" rx="75" ry="22" fill="#F0F3FC" />
-                            {/* Striped towel */}
-                            <polygon points="80,140 155,140 188,154 113,154" fill="#D3DCF8" />
-                            <polygon points="98,140 110,140 143,154 131,154" fill="#F0F3FC" />
-                            <polygon points="126,140 138,140 171,154 159,154" fill="#F0F3FC" />
-                            {/* Pole */}
-                            <polygon points="105,58 109,59 88,168 84,167" fill="#C4D0F5" />
-                            {/* Canopy facets */}
-                            <polygon points="25,42 112,18 105,58" fill="#BCC8F2" />
-                            <polygon points="25,42 105,58 182,84" fill="#A0B2E8" />
-                            <polygon points="112,18 182,84 105,58" fill="#E6EEFE" />
-                          </svg>
-                        </div>
-                        <p className="empty-text">No meetings scheduled.</p>
-                        <button className="schedule-action-btn" onClick={() => setShowSchedule(true)}>
-                          + Schedule a meeting
-                        </button>
-                      </div>
-                    );
-                  }
-
-                  return (
+                {dashboardTab === 'recent' ? (
+                  recentMeetings.length === 0 ? (
+                    <div className="schedule-empty-state">
+                      <p className="empty-text">No recent meetings yet.</p>
+                      <p style={{ fontSize: '13px', color: '#64748B', marginTop: '4px' }}>
+                        Completed or ended meetings will appear here automatically.
+                      </p>
+                      <button className="schedule-action-btn" onClick={() => handleOpenNewMeeting()}>
+                        Start a new meeting
+                      </button>
+                    </div>
+                  ) : (
                     <div className="meeting-list-items">
-                      {activeMeetings.map((meeting) => {
-                        const mId = meeting.meeting_id || meeting.meeting_code || String(meeting.id);
+                      {recentMeetings.map((meeting) => {
+                        const mId = meeting.meeting_id || (meeting as any).meeting_code || String(meeting.id);
                         const cleanId = mId.replace(/-/g, '');
                         const origin = typeof window !== 'undefined' ? window.location.origin : 'https://frontend-sable-rho-u2nzn8l17o.vercel.app';
                         const inviteUrl = meeting.invite_link?.startsWith('http')
@@ -551,20 +558,15 @@ export default function Home() {
                           <div key={meeting.id} className="zoom-meeting-row">
                             <div className="meeting-time-col">
                               <span className="time-str">
-                                {formatMeetingTime(meeting.scheduled_time, meeting.start_time)}
+                                {formatRecentDate(meeting.ended_at || meeting.started_at || meeting.created_at || (meeting as any).start_time)}
                               </span>
                               <span className="date-str">
-                                {formatMeetingDate(meeting.scheduled_date, meeting.start_time)}
+                                {formatDuration(meeting.duration_minutes)}
                               </span>
                             </div>
                             <div className="meeting-details-col">
                               <h4>{meeting.title}</h4>
-                              <p>ID: {formatMeetingId(mId)} • {formatDuration(meeting.duration_minutes)}</p>
-                              {meeting.description && (
-                                <p className="meeting-desc-sub" style={{ fontSize: '12px', color: '#64748B', marginTop: '2px' }}>
-                                  {meeting.description}
-                                </p>
-                              )}
+                              <p>ID: {formatMeetingId(mId)} • {meeting.participant_count || 1} participant{(meeting.participant_count || 1) > 1 ? 's' : ''}</p>
                             </div>
                             <div className="meeting-btns-col" style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                               <button
@@ -575,8 +577,9 @@ export default function Home() {
                                   }
                                   router.push(`/meeting/${cleanId}?name=Kartik&host=true`);
                                 }}
+                                title="Re-open meeting"
                               >
-                                Start
+                                Re-open
                               </button>
                               <button
                                 className="zoom-copy-btn"
@@ -584,29 +587,136 @@ export default function Home() {
                                   await navigator.clipboard.writeText(inviteUrl);
                                   showToast('Shareable invite link copied to clipboard!');
                                 }}
+                                title="Copy meeting link"
                               >
                                 Copy Link
-                              </button>
-                              <button
-                                className="zoom-cancel-btn"
-                                onClick={() => handleCancelSchedule(meeting.id)}
-                                title="Cancel Scheduled Meeting"
-                              >
-                                Cancel
                               </button>
                             </div>
                           </div>
                         );
                       })}
                     </div>
-                  );
-                })()}
+                  )
+                ) : (
+                  (() => {
+                    const dateStr = getYYYYMMDD(selectedDate);
+                    const dayMeetings = upcomingMeetings.filter(
+                      (m) => m.scheduled_date && m.scheduled_date.startsWith(dateStr)
+                    );
+                    const activeMeetings = dayMeetings.length > 0 ? dayMeetings : upcomingMeetings;
+
+                    if (activeMeetings.length === 0) {
+                      return (
+                        <div className="schedule-empty-state">
+                          <div className="umbrella-illustration">
+                            <svg width="140" height="110" viewBox="0 0 200 180" fill="none">
+                              <ellipse cx="115" cy="155" rx="75" ry="22" fill="#F0F3FC" />
+                              <polygon points="80,140 155,140 188,154 113,154" fill="#D3DCF8" />
+                              <polygon points="98,140 110,140 143,154 131,154" fill="#F0F3FC" />
+                              <polygon points="126,140 138,140 171,154 159,154" fill="#F0F3FC" />
+                              <polygon points="105,58 109,59 88,168 84,167" fill="#C4D0F5" />
+                              <polygon points="25,42 112,18 105,58" fill="#BCC8F2" />
+                              <polygon points="25,42 105,58 182,84" fill="#A0B2E8" />
+                              <polygon points="112,18 182,84 105,58" fill="#E6EEFE" />
+                            </svg>
+                          </div>
+                          <p className="empty-text">No meetings scheduled.</p>
+                          <button className="schedule-action-btn" onClick={() => setShowSchedule(true)}>
+                            + Schedule a meeting
+                          </button>
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <div className="meeting-list-items">
+                        {activeMeetings.map((meeting) => {
+                          const mId = meeting.meeting_id || meeting.meeting_code || String(meeting.id);
+                          const cleanId = mId.replace(/-/g, '');
+                          const origin = typeof window !== 'undefined' ? window.location.origin : 'https://frontend-sable-rho-u2nzn8l17o.vercel.app';
+                          const inviteUrl = meeting.invite_link?.startsWith('http')
+                            ? meeting.invite_link
+                            : `${origin}/meeting/${cleanId}`;
+
+                          return (
+                            <div key={meeting.id} className="zoom-meeting-row">
+                              <div className="meeting-time-col">
+                                <span className="time-str">
+                                  {formatMeetingTime(meeting.scheduled_time, meeting.start_time)}
+                                </span>
+                                <span className="date-str">
+                                  {formatMeetingDate(meeting.scheduled_date, meeting.start_time)}
+                                </span>
+                              </div>
+                              <div className="meeting-details-col">
+                                <h4>{meeting.title}</h4>
+                                <p>ID: {formatMeetingId(mId)} • {formatDuration(meeting.duration_minutes)}</p>
+                                {meeting.description && (
+                                  <p className="meeting-desc-sub" style={{ fontSize: '12px', color: '#64748B', marginTop: '2px' }}>
+                                    {meeting.description}
+                                  </p>
+                                )}
+                              </div>
+                              <div className="meeting-btns-col" style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                                <button
+                                  className="zoom-start-btn"
+                                  onClick={() => {
+                                    if (typeof window !== 'undefined') {
+                                      sessionStorage.setItem(`zoom_host_${cleanId}`, 'true');
+                                    }
+                                    router.push(`/meeting/${cleanId}?name=Kartik&host=true`);
+                                  }}
+                                >
+                                  Start
+                                </button>
+                                <button
+                                  className="zoom-copy-btn"
+                                  onClick={async () => {
+                                    await navigator.clipboard.writeText(inviteUrl);
+                                    showToast('Shareable invite link copied to clipboard!');
+                                  }}
+                                >
+                                  Copy Link
+                                </button>
+                                <button
+                                  className="zoom-cancel-btn"
+                                  onClick={() => handleCancelSchedule(meeting.id)}
+                                  title="Cancel Scheduled Meeting"
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })()
+                )}
               </div>
 
               <div className="schedule-card-footer">
-                <a href="#recent" className="open-recordings-link">
-                  Open recordings <span>&rsaquo;</span>
-                </a>
+                {dashboardTab === 'upcoming' ? (
+                  <button
+                    onClick={() => {
+                      setDashboardTab('recent');
+                      const el = document.getElementById('recent');
+                      if (el) el.scrollIntoView({ behavior: 'smooth' });
+                    }}
+                    className="open-recordings-link"
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+                  >
+                    View past & recent meetings ({recentMeetings.length}) <span>&rsaquo;</span>
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => setDashboardTab('upcoming')}
+                    className="open-recordings-link"
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+                  >
+                    View upcoming scheduled meetings ({upcomingMeetings.length}) <span>&rsaquo;</span>
+                  </button>
+                )}
               </div>
             </div>
 
@@ -616,7 +726,7 @@ export default function Home() {
                 <h2 className="section-title">Recent Meetings</h2>
               </div>
               {recentMeetings.length === 0 ? (
-                <div style={{ padding: '24px', textAlign: 'center', color: 'rgba(255,255,255,0.6)', background: 'rgba(255,255,255,0.05)', borderRadius: '12px', fontSize: '14px' }}>
+                <div style={{ padding: '24px', textAlign: 'center', color: '#475569', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '12px', fontSize: '14px' }}>
                   No recent meetings yet. Completed or ended meetings will appear here automatically.
                 </div>
               ) : (
@@ -652,9 +762,9 @@ export default function Home() {
                               </div>
                             </div>
                           </td>
-                          <td>{formatRecentDate(meeting.ended_at || meeting.started_at || (meeting as any).start_time)}</td>
+                          <td>{formatRecentDate(meeting.ended_at || meeting.started_at || meeting.created_at || (meeting as any).start_time)}</td>
                           <td>{formatDuration(meeting.duration_minutes)}</td>
-                          <td>{meeting.participant_count || 0}</td>
+                          <td>{meeting.participant_count || 1}</td>
                           <td>
                             <span className={`status-badge ${meeting.status}`}>
                               <span className="dot"></span>

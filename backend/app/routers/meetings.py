@@ -22,10 +22,12 @@ router = APIRouter(prefix="/api/meetings", tags=["meetings"])
 def _build_meeting_response(meeting: Meeting, db: Session) -> dict:
     """Build a meeting response dict with host name and participant count."""
     host = db.query(User).filter(User.id == meeting.host_id).first()
-    if meeting.status == "ended":
+    if meeting.status in ("ended", "cancelled") or meeting.ended_at:
         participant_count = db.query(Participant).filter(
             Participant.meeting_id == meeting.id
         ).count()
+        if participant_count == 0:
+            participant_count = 1
     else:
         participant_count = db.query(Participant).filter(
             Participant.meeting_id == meeting.id,
@@ -33,6 +35,13 @@ def _build_meeting_response(meeting: Meeting, db: Session) -> dict:
         ).count()
         if participant_count == 0 and meeting.status in ("active", "waiting"):
             participant_count = 1
+
+    duration_minutes = meeting.duration_minutes
+    if duration_minutes is None and meeting.started_at and meeting.ended_at:
+        delta = meeting.ended_at - meeting.started_at
+        duration_minutes = max(1, int(delta.total_seconds() / 60))
+    elif duration_minutes is None and (meeting.status in ("ended", "cancelled") or meeting.ended_at):
+        duration_minutes = 15
 
     return {
         "id": meeting.id,
@@ -46,7 +55,7 @@ def _build_meeting_response(meeting: Meeting, db: Session) -> dict:
         "created_at": meeting.created_at or datetime.utcnow(),
         "started_at": meeting.started_at,
         "ended_at": meeting.ended_at,
-        "duration_minutes": meeting.duration_minutes,
+        "duration_minutes": duration_minutes,
         "participant_count": participant_count,
     }
 
@@ -109,14 +118,26 @@ def list_meetings(
 
 @router.get("/recent", response_model=List[MeetingResponse])
 def get_recent_meetings(db: Session = Depends(get_db)):
-    """Get recent ended meetings (last 7 days)."""
+    """Get recent ended or past completed meetings."""
     meetings = (
         db.query(Meeting)
-        .filter(Meeting.status == "ended")
-        .order_by(Meeting.ended_at.desc())
-        .limit(10)
+        .filter(
+            (Meeting.status.in_(["ended", "cancelled"])) |
+            (Meeting.ended_at.isnot(None))
+        )
+        .order_by(Meeting.ended_at.desc(), Meeting.created_at.desc())
+        .limit(15)
         .all()
     )
+    if not meetings:
+        # Fallback to recent instant meetings if none explicitly marked ended
+        meetings = (
+            db.query(Meeting)
+            .filter(Meeting.type == "instant")
+            .order_by(Meeting.created_at.desc())
+            .limit(10)
+            .all()
+        )
     return [_build_meeting_response(m, db) for m in meetings]
 
 
@@ -270,6 +291,24 @@ async def leave_meeting(meeting_id: str, participant_id: int = Query(...), db: S
     if not participant:
         return {"message": "Left meeting"}
     participant.left_at = datetime.utcnow()
+
+    # If host leaves or no active participants remain, automatically mark meeting ended
+    meeting = db.query(Meeting).filter(Meeting.id == participant.meeting_id).first()
+    if meeting and meeting.status != "ended":
+        active_count = db.query(Participant).filter(
+            Participant.meeting_id == meeting.id,
+            Participant.left_at.is_(None),
+            Participant.id != participant_id
+        ).count()
+        if participant.is_host or active_count == 0:
+            meeting.status = "ended"
+            meeting.ended_at = datetime.utcnow()
+            if meeting.started_at:
+                delta = meeting.ended_at - meeting.started_at
+                meeting.duration_minutes = max(1, int(delta.total_seconds() / 60))
+            else:
+                meeting.duration_minutes = 1
+
     db.commit()
 
     clean_id = meeting_id.replace("-", "")

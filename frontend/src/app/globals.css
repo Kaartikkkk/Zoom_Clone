@@ -409,10 +409,42 @@ input, textarea, select { font-family: inherit; }
 .schedule-card-header {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 12px;
   padding: 14px 18px;
   border-bottom: 1px solid var(--border-color);
   background: #FFFFFF;
+}
+
+.schedule-tabs-toggle {
+  display: flex;
+  background: #F1F5F9;
+  border-radius: 8px;
+  padding: 3px;
+  gap: 2px;
+}
+
+.schedule-tab-btn {
+  padding: 5px 12px;
+  font-size: 13px;
+  font-weight: 500;
+  border-radius: 6px;
+  color: var(--text-secondary);
+  background: transparent;
+  transition: all var(--transition-fast);
+  cursor: pointer;
+  border: none;
+}
+
+.schedule-tab-btn:hover {
+  color: var(--text-primary);
+}
+
+.schedule-tab-btn.active {
+  background: #FFFFFF;
+  color: var(--zoom-blue);
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
 }
 
 .schedule-add-btn {
