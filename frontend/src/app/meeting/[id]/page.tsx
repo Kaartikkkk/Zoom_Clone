@@ -914,6 +914,29 @@ export default function MeetingRoom({ params }: MeetingPageProps) {
     }
   };
 
+  const handleCopyInviteLink = () => {
+    let inviteUrl = meeting?.invite_link;
+    const cleanId = (meeting?.meeting_id || id || '').replace(/-/g, '');
+    if (!inviteUrl || !inviteUrl.startsWith('http')) {
+      if (typeof window !== 'undefined' && window.location.origin) {
+        inviteUrl = `${window.location.origin}/meeting/${cleanId}`;
+      } else {
+        inviteUrl = `https://frontend-sable-rho-u2nzn8l17o.vercel.app/meeting/${cleanId}`;
+      }
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(inviteUrl);
+    } else {
+      const ta = document.createElement('textarea');
+      ta.value = inviteUrl;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+    }
+    showToast('Shareable invite link copied to clipboard!');
+  };
+
   const getInitials = (name: string) => {
     return name.split(' ').map((n) => n[0]).join('').toUpperCase().slice(0, 2);
   };
@@ -1117,6 +1140,32 @@ export default function MeetingRoom({ params }: MeetingPageProps) {
         <div className="meeting-info">
           <span className="meeting-title-text">{meeting.title}</span>
           <span className="meeting-id-text">ID: {meeting.meeting_id}</span>
+          <button
+            onClick={handleCopyInviteLink}
+            className="copy-invite-link-btn"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '5px',
+              padding: '4px 10px',
+              borderRadius: '6px',
+              background: 'rgba(255, 255, 255, 0.12)',
+              border: '1px solid rgba(255, 255, 255, 0.22)',
+              color: '#fff',
+              fontSize: '12px',
+              fontWeight: 500,
+              cursor: 'pointer',
+              marginLeft: '8px',
+              transition: 'all 0.2s ease',
+            }}
+            title="Copy shareable meeting invite link"
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+              <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+            </svg>
+            Copy Link
+          </button>
         </div>
 
         <div className="meeting-timer">
@@ -1253,6 +1302,7 @@ export default function MeetingRoom({ params }: MeetingPageProps) {
           onToggleMute={handleToggleParticipantMute}
           onRemove={handleRemoveParticipant}
           isHost={isCurrentHost}
+          onInvite={handleCopyInviteLink}
         />
 
         {/* Chat Panel */}

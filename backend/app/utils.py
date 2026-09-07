@@ -1,5 +1,8 @@
+import os
 import random
 import string
+
+FRONTEND_URL = os.getenv("FRONTEND_URL", "https://frontend-sable-rho-u2nzn8l17o.vercel.app").rstrip("/")
 
 
 def generate_meeting_id() -> str:
@@ -11,7 +14,8 @@ def generate_meeting_id() -> str:
 
 
 def generate_invite_link(meeting_id: str) -> str:
-    """Generate invite link path for a meeting."""
+    """Generate absolute shareable invite link for a meeting."""
     clean_id = meeting_id.replace("-", "")
-    return f"/meeting/{clean_id}"
+    return f"{FRONTEND_URL}/meeting/{clean_id}"
+
 

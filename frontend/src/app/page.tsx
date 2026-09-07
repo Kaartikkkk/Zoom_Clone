@@ -69,8 +69,12 @@ export default function Home() {
     try {
       const meeting = await meetingApi.create({ title: "Kartik's Zoom Meeting" });
       const cleanId = (meeting.meeting_id || String(meeting.id)).replace(/-/g, '');
+      const origin = typeof window !== 'undefined' ? window.location.origin : 'https://frontend-sable-rho-u2nzn8l17o.vercel.app';
+      const fullUrl = meeting.invite_link?.startsWith('http')
+        ? meeting.invite_link
+        : `${origin}/meeting/${cleanId}`;
       setNewMeetingId(meeting.meeting_id);
-      setNewMeetingLink(meeting.invite_link || `${window.location.origin}/meeting/${cleanId}`);
+      setNewMeetingLink(fullUrl);
       setShowNewMeeting(true);
     } catch (err) {
       console.error('Failed to create instant meeting:', err);
@@ -538,7 +542,10 @@ export default function Home() {
                       {activeMeetings.map((meeting) => {
                         const mId = meeting.meeting_id || meeting.meeting_code || String(meeting.id);
                         const cleanId = mId.replace(/-/g, '');
-                        const inviteUrl = meeting.invite_link || `${window.location.origin}/meeting/${cleanId}`;
+                        const origin = typeof window !== 'undefined' ? window.location.origin : 'https://frontend-sable-rho-u2nzn8l17o.vercel.app';
+                        const inviteUrl = meeting.invite_link?.startsWith('http')
+                          ? meeting.invite_link
+                          : `${origin}/meeting/${cleanId}`;
 
                         return (
                           <div key={meeting.id} className="zoom-meeting-row">
@@ -575,7 +582,7 @@ export default function Home() {
                                 className="zoom-copy-btn"
                                 onClick={async () => {
                                   await navigator.clipboard.writeText(inviteUrl);
-                                  showToast('Invite link copied!');
+                                  showToast('Shareable invite link copied to clipboard!');
                                 }}
                               >
                                 Copy Link

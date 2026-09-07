@@ -22,11 +22,18 @@ export default function NewMeetingModal({
   const [withVideo, setWithVideo] = useState(true);
   const [copied, setCopied] = useState(false);
 
+  const origin = typeof window !== 'undefined' ? window.location.origin : 'https://frontend-sable-rho-u2nzn8l17o.vercel.app';
+  const effectiveLink = meetingLink?.startsWith('http')
+    ? meetingLink
+    : (meetingId
+        ? `${origin}/meeting/${meetingId.replace(/-/g, '')}`
+        : (meetingLink ? `${origin}${meetingLink}` : ''));
+
   if (!isOpen) return null;
 
   const handleCopy = async () => {
-    if (meetingLink) {
-      await navigator.clipboard.writeText(meetingLink);
+    if (effectiveLink) {
+      await navigator.clipboard.writeText(effectiveLink);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     }
@@ -86,13 +93,13 @@ export default function NewMeetingModal({
             </div>
           )}
 
-          {meetingLink && (
+          {effectiveLink && (
             <div style={{ marginTop: '14px' }}>
               <div className="form-label" style={{ fontSize: '13px', fontWeight: 600, color: '#475569', marginBottom: '6px' }}>
                 Shareable Invite Link
               </div>
               <div className="invite-link-box">
-                <span className="link-text">{meetingLink}</span>
+                <span className="link-text">{effectiveLink}</span>
                 <button type="button" className="copy-btn" onClick={handleCopy}>
                   {copied ? '✓ Copied' : 'Copy'}
                 </button>
