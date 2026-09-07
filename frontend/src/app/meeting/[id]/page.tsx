@@ -253,21 +253,7 @@ export default function MeetingRoom({ params }: MeetingPageProps) {
     return () => clearInterval(timer);
   }, [meeting]);
 
-  // Simulate random speaking for other participants
-  useEffect(() => {
-    if (participants.length === 0) return;
-    const interval = setInterval(() => {
-      const otherParticipants = participants.filter(p => p.id !== myParticipantId);
-      if (otherParticipants.length > 0) {
-        const randomIdx = Math.floor(Math.random() * otherParticipants.length);
-        setSpeakingId(otherParticipants[randomIdx]?.id || null);
-        setTimeout(() => setSpeakingId(null), 2000 + Math.random() * 3000);
-      }
-    }, 5000 + Math.random() * 4000);
-    return () => clearInterval(interval);
-  }, [participants, myParticipantId]);
-
-  // Poll participants
+  // Poll participants from database every 5s
   useEffect(() => {
     if (!meeting) return;
     const interval = setInterval(async () => {
@@ -359,32 +345,6 @@ export default function MeetingRoom({ params }: MeetingPageProps) {
       isMe: true,
     };
     setMessages(prev => [...prev, newMsg]);
-
-    // Simulate response from another participant after 3 seconds for active feel
-    if (participants.length > 1) {
-      setTimeout(() => {
-        const replyParticipant = participants.find(p => p.id !== myParticipantId) || participants[1];
-        const replies = [
-          'Got it! 👍',
-          'Sounds good to me!',
-          'Could you repeat that link?',
-          'Thanks for sharing!',
-          'Great point!',
-        ];
-        const randomReply = replies[Math.floor(Math.random() * replies.length)];
-        const replyMsg: ChatMessage = {
-          id: String(Date.now() + 1),
-          sender: replyParticipant.display_name,
-          text: randomReply,
-          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          isMe: false,
-        };
-        setMessages(prev => [...prev, replyMsg]);
-        if (!showChat) {
-          setUnreadChatCount(prev => prev + 1);
-        }
-      }, 2500 + Math.random() * 2000);
-    }
   };
 
   // Reactions Handling

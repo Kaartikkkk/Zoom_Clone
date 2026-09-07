@@ -226,7 +226,10 @@ def join_meeting(meeting_id: str, data: JoinMeetingRequest, db: Session = Depend
         )
 
     if meeting.status == "ended":
-        meeting.status = "active"
+        raise HTTPException(
+            status_code=400,
+            detail="This meeting has ended."
+        )
 
     # Set meeting to active if it's waiting
     if meeting.status == "waiting":

@@ -104,7 +104,7 @@ def cancel_scheduled_meeting(schedule_id: int, db: Session = Depends(get_db)):
 
     meeting = db.query(Meeting).filter(Meeting.id == schedule.meeting_id).first()
     if meeting:
-        meeting.status = "ended"
+        meeting.status = "cancelled"
         meeting.ended_at = datetime.utcnow()
 
     db.delete(schedule)

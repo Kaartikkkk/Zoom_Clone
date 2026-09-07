@@ -30,17 +30,21 @@ export default function Home() {
     return () => clearInterval(timer);
   }, []);
 
+  const [apiError, setApiError] = useState<string | null>(null);
+
   // Fetch data
   const loadData = useCallback(async () => {
     try {
+      setApiError(null);
       const [upcoming, recent] = await Promise.all([
         meetingApi.getUpcoming(),
         meetingApi.getRecent(),
       ]);
       setUpcomingMeetings(upcoming);
       setRecentMeetings(recent);
-    } catch (err) {
+    } catch (err: unknown) {
       console.error('Failed to load data:', err);
+      setApiError('Unable to load meetings from server. Please check your connection.');
     }
   }, []);
 
@@ -280,6 +284,37 @@ export default function Home() {
         <main className="main-content">
           <div className="page-content">
             <div className="dashboard-center-container">
+              {apiError && (
+                <div className="api-error-banner" style={{
+                  background: '#FEF2F2',
+                  border: '1px solid #FCA5A5',
+                  color: '#991B1B',
+                  padding: '12px 16px',
+                  borderRadius: '8px',
+                  marginBottom: '20px',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  fontSize: '14px',
+                }}>
+                  <span>{apiError}</span>
+                  <button
+                    onClick={() => loadData()}
+                    style={{
+                      background: '#EF4444',
+                      color: 'white',
+                      border: 'none',
+                      padding: '6px 12px',
+                      borderRadius: '6px',
+                      cursor: 'pointer',
+                      fontWeight: 600,
+                      fontSize: '13px',
+                    }}
+                  >
+                    Retry
+                  </button>
+                </div>
+              )}
               {/* Center Clock & Date */}
               <div className="zoom-clock-container">
               <div className="zoom-clock-time">{formatTime(currentTime)}</div>
