@@ -11,6 +11,7 @@ import { meetingApi, scheduleApi, type Meeting, type UpcomingMeeting } from '@/l
 
 export default function Home() {
   const router = useRouter();
+  const [mounted, setMounted] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [upcomingMeetings, setUpcomingMeetings] = useState<UpcomingMeeting[]>([]);
@@ -23,6 +24,10 @@ export default function Home() {
   const [joinError, setJoinError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [toast, setToast] = useState('');
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   // Clock tick
   useEffect(() => {
@@ -316,10 +321,10 @@ export default function Home() {
                 </div>
               )}
               {/* Center Clock & Date */}
-              <div className="zoom-clock-container">
-              <div className="zoom-clock-time">{formatTime(currentTime)}</div>
-              <div className="zoom-clock-date">{formatDate(currentTime)}</div>
-            </div>
+              <div className="zoom-clock-container" suppressHydrationWarning>
+                <div className="zoom-clock-time" suppressHydrationWarning>{mounted ? formatTime(currentTime) : ''}</div>
+                <div className="zoom-clock-date" suppressHydrationWarning>{mounted ? formatDate(currentTime) : ''}</div>
+              </div>
 
             {/* 5 Iconic Squircle Action Tiles */}
             <div className="action-tiles-row">
@@ -429,10 +434,10 @@ export default function Home() {
                   </svg>
                 </button>
                 <button className="schedule-date-dropdown" onClick={() => setSelectedDate(new Date())}>
-                  <span>
-                    {selectedDate.toDateString() === new Date().toDateString()
+                  <span suppressHydrationWarning>
+                    {mounted && (selectedDate.toDateString() === new Date().toDateString()
                       ? `Today, ${selectedDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
-                      : selectedDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+                      : selectedDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }))}
                   </span>
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                     <polyline points="6 9 12 15 18 9" />
