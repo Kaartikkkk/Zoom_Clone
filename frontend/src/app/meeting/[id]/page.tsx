@@ -172,6 +172,7 @@ export default function MeetingRoom({ params }: MeetingPageProps) {
           }
           remoteStreamsRef.current.delete(senderId);
           setRemoteStreamsMap({ ...Object.fromEntries(remoteStreamsRef.current) });
+          setParticipants((prev) => prev.filter((p) => String(p.id) !== senderId));
         }
       } catch (err) {
         console.error('Signaling error:', err);
@@ -504,14 +505,34 @@ export default function MeetingRoom({ params }: MeetingPageProps) {
     showToast(!isRecording ? '● Recording started' : 'Recording stopped & saved');
   };
 
+  useEffect(() => {
+    const handleUnload = () => {
+      if (meeting && myParticipantId) {
+        const apiBase = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+        navigator.sendBeacon(`${apiBase}/api/meetings/${meeting.meeting_id}/leave?participant_id=${myParticipantId}`);
+      }
+    };
+    window.addEventListener('beforeunload', handleUnload);
+    return () => window.removeEventListener('beforeunload', handleUnload);
+  }, [meeting, myParticipantId]);
+
   const handleEndMeeting = async () => {
     if (localStream) {
-      localStream.getTracks().forEach(t => t.stop());
+      localStream.getTracks().forEach((t) => t.stop());
     }
     if (screenStream) {
-      screenStream.getTracks().forEach(t => t.stop());
+      screenStream.getTracks().forEach((t) => t.stop());
     }
-    if (meeting) {
+    if (wsRef.current) {
+      wsRef.current.close();
+    }
+    if (meeting && myParticipantId) {
+      try {
+        await meetingApi.leave(meeting.meeting_id, myParticipantId);
+      } catch (e) { /* ignore */ }
+    }
+    const myParticipant = participants.find((p) => p.id === myParticipantId);
+    if (meeting && myParticipant?.is_host) {
       try {
         await meetingApi.update(meeting.meeting_id, { status: 'ended' });
       } catch (e) { /* ignore */ }
