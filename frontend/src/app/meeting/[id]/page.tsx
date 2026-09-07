@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, use } from 'react';
+import { useState, useEffect, useCallback, useRef, use } from 'react';
 import { useRouter } from 'next/navigation';
 import MeetingToolbar from '@/components/MeetingToolbar';
 import ParticipantsPanel from '@/components/ParticipantsPanel';
@@ -23,11 +23,124 @@ export default function MeetingRoom({ params }: MeetingPageProps) {
   const [myParticipantId, setMyParticipantId] = useState<number | null>(null);
   const [toast, setToast] = useState('');
   const [speakingId, setSpeakingId] = useState<number | null>(null);
+  const [localStream, setLocalStream] = useState<MediaStream | null>(null);
+  const localVideoRef = useRef<HTMLVideoElement | null>(null);
 
   const showToast = (message: string) => {
     setToast(message);
     setTimeout(() => setToast(''), 3000);
   };
+
+  // Request WebRTC Camera & Microphone stream
+  useEffect(() => {
+    let activeStream: MediaStream | null = null;
+
+    async function initMedia() {
+      if (typeof window === 'undefined') return;
+      try {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+          console.warn('getUserMedia is not supported on this browser or context.');
+          return;
+        }
+        activeStream = await navigator.mediaDevices.getUserMedia({
+          video: true,
+          audio: true,
+        });
+        setLocalStream(activeStream);
+
+        // Apply initial mute/video settings
+        activeStream.getVideoTracks().forEach((track) => {
+          track.enabled = isVideoOn;
+        });
+        activeStream.getAudioTracks().forEach((track) => {
+          track.enabled = !isMuted;
+        });
+      } catch (err: any) {
+        console.warn('Webcam or Microphone permission denied or unavailable:', err);
+        showToast('Camera/Microphone permissions required for video & audio.');
+      }
+    }
+
+    if (meeting) {
+      initMedia();
+    }
+
+    return () => {
+      if (activeStream) {
+        activeStream.getTracks().forEach((track) => track.stop());
+      }
+    };
+  }, [meeting]);
+
+  // Sync video track with state
+  useEffect(() => {
+    if (localStream) {
+      localStream.getVideoTracks().forEach((track) => {
+        track.enabled = isVideoOn;
+      });
+    }
+  }, [isVideoOn, localStream]);
+
+  // Sync audio track with state
+  useEffect(() => {
+    if (localStream) {
+      localStream.getAudioTracks().forEach((track) => {
+        track.enabled = !isMuted;
+      });
+    }
+  }, [isMuted, localStream]);
+
+  // Real microphone audio level detection for speaking border
+  useEffect(() => {
+    if (!localStream || isMuted) return;
+
+    let audioContext: AudioContext | null = null;
+    let animId: number;
+
+    try {
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      if (AudioCtx) {
+        audioContext = new AudioCtx();
+        const source = audioContext.createMediaStreamSource(localStream);
+        const analyser = audioContext.createAnalyser();
+        analyser.fftSize = 256;
+        source.connect(analyser);
+
+        const bufferLength = analyser.frequencyBinCount;
+        const dataArray = new Uint8Array(bufferLength);
+
+        const checkVolume = () => {
+          analyser.getByteFrequencyData(dataArray);
+          let sum = 0;
+          for (let i = 0; i < bufferLength; i++) {
+            sum += dataArray[i];
+          }
+          const average = sum / bufferLength;
+          if (average > 15 && myParticipantId) {
+            setSpeakingId(myParticipantId);
+          }
+          animId = requestAnimationFrame(checkVolume);
+        };
+        checkVolume();
+      }
+    } catch (e) {
+      /* ignore audio context errors */
+    }
+
+    return () => {
+      if (animId) cancelAnimationFrame(animId);
+      if (audioContext && audioContext.state !== 'closed') {
+        audioContext.close();
+      }
+    };
+  }, [localStream, isMuted, myParticipantId]);
+
+  // Attach localStream to video element when available
+  useEffect(() => {
+    if (localVideoRef.current && localStream) {
+      localVideoRef.current.srcObject = localStream;
+    }
+  }, [localStream, isVideoOn, participants]);
 
   // Load meeting
   const loadMeeting = useCallback(async () => {
@@ -154,16 +267,19 @@ export default function MeetingRoom({ params }: MeetingPageProps) {
     return () => clearInterval(timer);
   }, [meeting]);
 
-  // Simulate random speaking
+  // Simulate random speaking for other participants
   useEffect(() => {
     if (participants.length === 0) return;
     const interval = setInterval(() => {
-      const randomIdx = Math.floor(Math.random() * participants.length);
-      setSpeakingId(participants[randomIdx]?.id || null);
-      setTimeout(() => setSpeakingId(null), 2000 + Math.random() * 3000);
-    }, 4000 + Math.random() * 4000);
+      const otherParticipants = participants.filter(p => p.id !== myParticipantId);
+      if (otherParticipants.length > 0) {
+        const randomIdx = Math.floor(Math.random() * otherParticipants.length);
+        setSpeakingId(otherParticipants[randomIdx]?.id || null);
+        setTimeout(() => setSpeakingId(null), 2000 + Math.random() * 3000);
+      }
+    }, 5000 + Math.random() * 4000);
     return () => clearInterval(interval);
-  }, [participants]);
+  }, [participants, myParticipantId]);
 
   // Poll participants
   useEffect(() => {
@@ -186,28 +302,43 @@ export default function MeetingRoom({ params }: MeetingPageProps) {
   };
 
   const handleToggleMute = async () => {
-    setIsMuted(!isMuted);
+    const newMuted = !isMuted;
+    setIsMuted(newMuted);
+
+    if (localStream) {
+      localStream.getAudioTracks().forEach(t => (t.enabled = !newMuted));
+    }
+
     if (myParticipantId && meeting) {
       try {
         await meetingApi.updateParticipant(meeting.meeting_id, myParticipantId, {
-          is_muted: !isMuted,
+          is_muted: newMuted,
         });
       } catch (e) { /* ignore */ }
     }
   };
 
   const handleToggleVideo = async () => {
-    setIsVideoOn(!isVideoOn);
+    const newVideo = !isVideoOn;
+    setIsVideoOn(newVideo);
+
+    if (localStream) {
+      localStream.getVideoTracks().forEach(t => (t.enabled = newVideo));
+    }
+
     if (myParticipantId && meeting) {
       try {
         await meetingApi.updateParticipant(meeting.meeting_id, myParticipantId, {
-          is_video_on: !isVideoOn,
+          is_video_on: newVideo,
         });
       } catch (e) { /* ignore */ }
     }
   };
 
   const handleEndMeeting = async () => {
+    if (localStream) {
+      localStream.getTracks().forEach(t => t.stop());
+    }
     if (meeting) {
       try {
         await meetingApi.update(meeting.meeting_id, { status: 'ended' });
@@ -351,30 +482,51 @@ export default function MeetingRoom({ params }: MeetingPageProps) {
       <div className="meeting-room-body">
         <div className="video-grid-container">
           <div className={`video-grid ${getGridClass()}`}>
-            {participants.map((p, i) => (
-              <div
-                key={p.id}
-                className={`video-tile ${speakingId === p.id ? 'is-speaking' : ''}`}
-              >
+            {participants.map((p, i) => {
+              const isMe = p.id === myParticipantId || (p.is_host && (!myParticipantId || myParticipantId === 101));
+              const showLiveVideo = isMe && isVideoOn && localStream && localStream.getVideoTracks().some(t => t.enabled);
+
+              return (
                 <div
-                  className="video-tile-avatar"
-                  style={{ background: gradients[i % gradients.length] }}
+                  key={p.id}
+                  className={`video-tile ${speakingId === p.id ? 'is-speaking' : ''}`}
                 >
-                  {getInitials(p.display_name)}
-                </div>
-                <div className="video-tile-name">
-                  {p.is_muted && (
-                    <svg className="muted-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <line x1="1" y1="1" x2="23" y2="23" />
-                      <path d="M9 9v3a3 3 0 005.12 2.12M15 9.34V4a3 3 0 00-5.94-.6" />
-                      <path d="M17 16.95A7 7 0 015 12v-2m14 0v2c0 .74-.11 1.45-.33 2.12" />
-                    </svg>
+                  {showLiveVideo ? (
+                    <video
+                      ref={(el) => {
+                        localVideoRef.current = el;
+                        if (el && localStream) {
+                          el.srcObject = localStream;
+                        }
+                      }}
+                      autoPlay
+                      playsInline
+                      muted
+                      className="video-tile-video"
+                    />
+                  ) : (
+                    <div
+                      className="video-tile-avatar"
+                      style={{ background: gradients[i % gradients.length] }}
+                    >
+                      {getInitials(p.display_name)}
+                    </div>
                   )}
-                  {p.display_name}
-                  {p.is_host && ' (Host)'}
+
+                  <div className="video-tile-name">
+                    {(isMe ? isMuted : p.is_muted) && (
+                      <svg className="muted-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <line x1="1" y1="1" x2="23" y2="23" />
+                        <path d="M9 9v3a3 3 0 005.12 2.12M15 9.34V4a3 3 0 00-5.94-.6" />
+                        <path d="M17 16.95A7 7 0 015 12v-2m14 0v2c0 .74-.11 1.45-.33 2.12" />
+                      </svg>
+                    )}
+                    {p.display_name}
+                    {p.is_host && ' (Host)'}
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
 
@@ -408,3 +560,4 @@ export default function MeetingRoom({ params }: MeetingPageProps) {
     </div>
   );
 }
+

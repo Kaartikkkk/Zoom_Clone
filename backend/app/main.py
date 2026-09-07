@@ -13,11 +13,18 @@ app = FastAPI(
     version="1.0.0",
 )
 
-# CORS Configuration — allow frontend to communicate (Vercel, Render, Localhost, etc.)
+# CORS Configuration — allow frontend to communicate
+origins = [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://localhost:3001",
+    "https://frontend-sable-rho-u2nzn8l17o.vercel.app",
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=False,
+    allow_origins=origins,
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )

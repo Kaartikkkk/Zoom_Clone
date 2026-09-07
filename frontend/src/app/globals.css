@@ -2115,6 +2115,14 @@ nextjs-portal, [data-nextjs-toast], #nextjs-dev-tools, div[class*="next-dev"] {
   justify-content: center;
 }
 
+.video-tile-video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transform: scaleX(-1);
+  background: #1A1A24;
+}
+
 .video-tile-avatar {
   width: 80px;
   height: 80px;
