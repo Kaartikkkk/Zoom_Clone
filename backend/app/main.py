@@ -1,4 +1,5 @@
 import json
+from datetime import datetime
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -79,8 +80,29 @@ async def websocket_endpoint(websocket: WebSocket, meeting_id: str, participant_
             data = await websocket.receive_text()
             msg = json.loads(data)
             msg["sender"] = str(participant_id)
-            target = msg.get("target")
 
+            if msg.get("type") == "leave":
+                # Handle graceful leave from client
+                manager.disconnect(clean_id, str(participant_id))
+                try:
+                    pid = int(participant_id)
+                    db = SessionLocal()
+                    try:
+                        db.query(Participant).filter(Participant.id == pid).update({"left_at": datetime.utcnow()})
+                        db.commit()
+                    finally:
+                        db.close()
+                except Exception as e:
+                    print(f"Error marking participant left on leave message: {e}")
+
+                await manager.broadcast_to_room(
+                    clean_id,
+                    {"type": "peer-left", "sender": str(participant_id)},
+                    str(participant_id)
+                )
+                break
+
+            target = msg.get("target")
             if target:
                 await manager.send_to_peer(clean_id, str(target), msg)
             else:
@@ -98,12 +120,13 @@ async def websocket_endpoint(websocket: WebSocket, meeting_id: str, participant_
                 db.commit()
             finally:
                 db.close()
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"Error marking participant left on disconnect: {e}")
 
         await manager.broadcast_to_room(
             clean_id,
             {"type": "peer-left", "sender": str(participant_id)},
             str(participant_id)
         )
+
 

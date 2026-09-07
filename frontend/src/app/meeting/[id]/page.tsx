@@ -66,10 +66,15 @@ export default function MeetingRoom({ params }: MeetingPageProps) {
   const [toast, setToast] = useState('');
   const [speakingId, setSpeakingId] = useState<number | null>(null);
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
+  const [mediaReady, setMediaReady] = useState(false);
   const [screenStream, setScreenStream] = useState<MediaStream | null>(null);
   const [isRecording, setIsRecording] = useState(false);
   const [activeReactions, setActiveReactions] = useState<{ id: string; emoji: string; left: number }[]>([]);
   const [remoteStreamsMap, setRemoteStreamsMap] = useState<{ [id: string]: MediaStream }>({});
+
+  const [needsNamePrompt, setNeedsNamePrompt] = useState(false);
+  const [joinPromptName, setJoinPromptName] = useState('');
+  const [isJoiningRoom, setIsJoiningRoom] = useState(false);
 
   const localVideoRef = useRef<HTMLVideoElement | null>(null);
   const screenVideoRef = useRef<HTMLVideoElement | null>(null);
@@ -93,12 +98,24 @@ export default function MeetingRoom({ params }: MeetingPageProps) {
     const pc = new RTCPeerConnection(ICE_SERVERS);
     peerConnectionsRef.current.set(targetPeerId, pc);
 
-    // Add local tracks if stream is ready
+    // Bidirectional audio and video transceivers so SDP always negotiates both streams
+    try {
+      pc.addTransceiver('audio', { direction: 'sendrecv' });
+      pc.addTransceiver('video', { direction: 'sendrecv' });
+    } catch (e) { /* ignore */ }
+
+    // Add local tracks if available
     const stream = localStreamRef.current;
     if (stream) {
       stream.getTracks().forEach((track) => {
         try {
-          pc.addTrack(track, stream);
+          const senders = pc.getSenders();
+          const existing = senders.find((s) => s.track?.kind === track.kind);
+          if (existing) {
+            existing.replaceTrack(track);
+          } else {
+            pc.addTrack(track, stream);
+          }
         } catch (e) { /* ignore duplicate */ }
       });
     }
@@ -147,6 +164,7 @@ export default function MeetingRoom({ params }: MeetingPageProps) {
       if (typeof window === 'undefined') return;
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         console.warn('getUserMedia is not supported on this browser or context.');
+        setMediaReady(true);
         return;
       }
       try {
@@ -169,8 +187,13 @@ export default function MeetingRoom({ params }: MeetingPageProps) {
         peerConnectionsRef.current.forEach((pc) => {
           stream.getTracks().forEach((track) => {
             const senders = pc.getSenders();
-            if (!senders.some((s) => s.track?.id === track.id)) {
-              pc.addTrack(track, stream);
+            const existing = senders.find((s) => s.track?.kind === track.kind);
+            if (existing) {
+              existing.replaceTrack(track);
+            } else {
+              try {
+                pc.addTrack(track, stream);
+              } catch (e) { /* ignore */ }
             }
           });
         });
@@ -183,6 +206,8 @@ export default function MeetingRoom({ params }: MeetingPageProps) {
         } catch (e) {
           console.warn('Media unavailable:', e);
         }
+      } finally {
+        setMediaReady(true);
       }
     }
 
@@ -229,9 +254,9 @@ export default function MeetingRoom({ params }: MeetingPageProps) {
     });
   }, [localStream, myParticipantId]);
 
-  // WebRTC Signaling via WebSocket
+  // WebRTC Signaling via WebSocket (only after media initialization is complete)
   useEffect(() => {
-    if (!meeting || !myParticipantId) return;
+    if (!meeting || !myParticipantId || !mediaReady) return;
 
     const wsUrl = getWsUrl(meeting.meeting_id, myParticipantId);
     let ws: WebSocket;
@@ -253,7 +278,7 @@ export default function MeetingRoom({ params }: MeetingPageProps) {
 
           for (const peerId of peerIds) {
             const pIdStr = String(peerId);
-            // Deterministic initiator: only peer with lower ID creates offer to prevent glare
+            // Deterministic initiator: peer with lower ID creates offer to avoid glare
             const isInitiator = Number(myParticipantId) < Number(pIdStr);
 
             if (isInitiator) {
@@ -261,13 +286,15 @@ export default function MeetingRoom({ params }: MeetingPageProps) {
               if (pc.signalingState === 'stable') {
                 const offer = await pc.createOffer();
                 await pc.setLocalDescription(offer);
-                ws.send(
-                  JSON.stringify({
-                    type: 'offer',
-                    target: pIdStr,
-                    offer,
-                  })
-                );
+                if (ws.readyState === WebSocket.OPEN) {
+                  ws.send(
+                    JSON.stringify({
+                      type: 'offer',
+                      target: pIdStr,
+                      offer,
+                    })
+                  );
+                }
               }
             } else {
               // Target will answer when offer arrives
@@ -296,13 +323,15 @@ export default function MeetingRoom({ params }: MeetingPageProps) {
 
             const answer = await pc.createAnswer();
             await pc.setLocalDescription(answer);
-            ws.send(
-              JSON.stringify({
-                type: 'answer',
-                target: senderId,
-                answer,
-              })
-            );
+            if (ws.readyState === WebSocket.OPEN) {
+              ws.send(
+                JSON.stringify({
+                  type: 'answer',
+                  target: senderId,
+                  answer,
+                })
+              );
+            }
           }
         } else if (msg.type === 'answer') {
           const pc = peerConnectionsRef.current.get(senderId);
@@ -338,6 +367,17 @@ export default function MeetingRoom({ params }: MeetingPageProps) {
           remoteStreamsRef.current.delete(senderId);
           setRemoteStreamsMap({ ...Object.fromEntries(remoteStreamsRef.current) });
           setParticipants((prev) => prev.filter((p) => String(p.id) !== senderId));
+          showToast('A participant left the meeting');
+        } else if (msg.type === 'meeting-ended') {
+          showToast('The host has ended the meeting.');
+          setTimeout(() => {
+            window.location.href = '/';
+          }, 1500);
+        } else if (msg.type === 'removed-from-meeting') {
+          showToast('You have been removed from the meeting by the host.');
+          setTimeout(() => {
+            window.location.href = '/';
+          }, 1500);
         }
       } catch (err) {
         console.error('Signaling error:', err);
@@ -351,7 +391,25 @@ export default function MeetingRoom({ params }: MeetingPageProps) {
       remoteStreamsRef.current.clear();
       iceCandidateQueueRef.current.clear();
     };
-  }, [meeting?.meeting_id, myParticipantId, createPeerConnection]);
+  }, [meeting?.meeting_id, myParticipantId, mediaReady, createPeerConnection]);
+
+  // Audio unlock listener for browser autoplay policy
+  useEffect(() => {
+    const unlockAudio = () => {
+      document.querySelectorAll('audio, video').forEach((el) => {
+        const media = el as HTMLMediaElement;
+        if (media && !media.muted && media.paused) {
+          media.play().catch(() => {});
+        }
+      });
+    };
+    window.addEventListener('click', unlockAudio);
+    window.addEventListener('touchstart', unlockAudio);
+    return () => {
+      window.removeEventListener('click', unlockAudio);
+      window.removeEventListener('touchstart', unlockAudio);
+    };
+  }, []);
 
   // Sync video track with state
   useEffect(() => {
@@ -430,7 +488,7 @@ export default function MeetingRoom({ params }: MeetingPageProps) {
     }
   }, [screenStream]);
 
-  // Load meeting
+  // Load meeting & manage participant identity
   const loadMeeting = useCallback(async () => {
     try {
       let m: Meeting | null = null;
@@ -466,11 +524,15 @@ export default function MeetingRoom({ params }: MeetingPageProps) {
         } catch (e) { /* ignore */ }
       }
 
-      // Check if custom display name was passed via URL (?name=...)
+      const cleanId = m.meeting_id.replace(/-/g, '');
+
+      // Check session storage and URL query params
       let customName = '';
+      let isHostFlag = false;
       if (typeof window !== 'undefined') {
         const urlParams = new URLSearchParams(window.location.search);
-        customName = urlParams.get('name') || '';
+        customName = urlParams.get('name') || sessionStorage.getItem(`zoom_name_${cleanId}`) || '';
+        isHostFlag = urlParams.get('host') === 'true' || sessionStorage.getItem(`zoom_host_${cleanId}`) === 'true';
       }
 
       // 2. Fetch active participants from backend SQLite
@@ -479,26 +541,56 @@ export default function MeetingRoom({ params }: MeetingPageProps) {
         parts = await meetingApi.getParticipants(m.meeting_id);
       } catch (e) { /* ignore */ }
 
-      // 3. Register user in backend if not present
-      const userDisplayName = (customName.trim() || (m.host_name ? m.host_name : 'Kartik')).replace(/\s*\(Host\)$/i, '');
-      const alreadyJoined = parts.some(p => p.display_name.replace(/\s*\(Host\)$/i, '').toLowerCase() === userDisplayName.toLowerCase());
-
-      if (!alreadyJoined) {
-        try {
-          const newPart = await meetingApi.join(m.meeting_id, { display_name: userDisplayName });
-          parts = await meetingApi.getParticipants(m.meeting_id);
-          if (!parts.some(p => p.id === newPart.id)) {
-            parts.push(newPart);
+      // 3. Check if this browser tab already has an active participant ID stored
+      let existingPid: number | null = null;
+      if (typeof window !== 'undefined') {
+        const savedPid = sessionStorage.getItem(`zoom_participant_${cleanId}`);
+        if (savedPid) {
+          const matched = parts.find(p => p.id === Number(savedPid) && !p.left_at);
+          if (matched) {
+            existingPid = matched.id;
           }
-        } catch (e) { /* ignore */ }
+        }
       }
 
+      if (existingPid) {
+        setMyParticipantId(existingPid);
+        setParticipants(parts);
+        return;
+      }
+
+      // 4. If host, connect to the host participant record
+      if (isHostFlag) {
+        const hostPart = parts.find(p => p.is_host && !p.left_at);
+        if (hostPart) {
+          setMyParticipantId(hostPart.id);
+          if (typeof window !== 'undefined') {
+            sessionStorage.setItem(`zoom_participant_${cleanId}`, String(hostPart.id));
+            sessionStorage.setItem(`zoom_host_${cleanId}`, 'true');
+          }
+          setParticipants(parts);
+          return;
+        }
+      }
+
+      // 5. If custom name provided (e.g. from homepage join modal), join immediately
+      if (customName.trim()) {
+        try {
+          const newPart = await meetingApi.join(m.meeting_id, { display_name: customName.trim() });
+          if (typeof window !== 'undefined') {
+            sessionStorage.setItem(`zoom_participant_${cleanId}`, String(newPart.id));
+            sessionStorage.setItem(`zoom_name_${cleanId}`, customName.trim());
+          }
+          setMyParticipantId(newPart.id);
+          parts = await meetingApi.getParticipants(m.meeting_id);
+          setParticipants(parts);
+          return;
+        } catch (e) { /* fallback */ }
+      }
+
+      // 6. Direct link with no name -> prompt user to enter display name
       setParticipants(parts);
-
-      const myPart = parts.find(p => p.display_name.replace(/\s*\(Host\)$/i, '').toLowerCase() === userDisplayName.toLowerCase()) || parts[0];
-      if (myPart) {
-        setMyParticipantId(myPart.id);
-      }
+      setNeedsNamePrompt(true);
     } catch (err) {
       console.error('Meeting load error:', err);
       setError('Meeting not found. Please check the Meeting ID or invite link.');
@@ -508,6 +600,28 @@ export default function MeetingRoom({ params }: MeetingPageProps) {
   useEffect(() => {
     loadMeeting();
   }, [loadMeeting]);
+
+  const handleConfirmJoin = async () => {
+    if (!meeting) return;
+    setIsJoiningRoom(true);
+    const cleanId = meeting.meeting_id.replace(/-/g, '');
+    const finalName = joinPromptName.trim() || 'Guest';
+    try {
+      const newPart = await meetingApi.join(meeting.meeting_id, { display_name: finalName });
+      if (typeof window !== 'undefined') {
+        sessionStorage.setItem(`zoom_participant_${cleanId}`, String(newPart.id));
+        sessionStorage.setItem(`zoom_name_${cleanId}`, finalName);
+      }
+      setMyParticipantId(newPart.id);
+      const parts = await meetingApi.getParticipants(meeting.meeting_id);
+      setParticipants(parts);
+      setNeedsNamePrompt(false);
+    } catch (e: any) {
+      showToast(e.message || 'Failed to join meeting');
+    } finally {
+      setIsJoiningRoom(false);
+    }
+  };
 
   // Timer
   useEffect(() => {
@@ -520,7 +634,7 @@ export default function MeetingRoom({ params }: MeetingPageProps) {
 
   // Poll participants from database every 5s
   useEffect(() => {
-    if (!meeting) return;
+    if (!meeting || needsNamePrompt) return;
     const interval = setInterval(async () => {
       try {
         const parts = await meetingApi.getParticipants(meeting.meeting_id);
@@ -528,7 +642,7 @@ export default function MeetingRoom({ params }: MeetingPageProps) {
       } catch (e) { /* ignore */ }
     }, 5000);
     return () => clearInterval(interval);
-  }, [meeting]);
+  }, [meeting, needsNamePrompt]);
 
   const formatElapsed = (seconds: number) => {
     const h = Math.floor(seconds / 3600);
@@ -642,27 +756,45 @@ export default function MeetingRoom({ params }: MeetingPageProps) {
   }, [meeting, myParticipantId]);
 
   const handleEndMeeting = async () => {
-    if (localStream) {
-      localStream.getTracks().forEach((t) => t.stop());
+    // 1. Stop local media streams immediately
+    if (localStreamRef.current) {
+      localStreamRef.current.getTracks().forEach((t) => t.stop());
     }
     if (screenStream) {
       screenStream.getTracks().forEach((t) => t.stop());
     }
-    if (wsRef.current) {
+
+    // 2. Send graceful leave message over websocket before closing
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      try {
+        wsRef.current.send(JSON.stringify({ type: 'leave', sender: String(myParticipantId) }));
+      } catch (e) { /* ignore */ }
       wsRef.current.close();
     }
+
+    // 3. Call backend leave API
     if (meeting && myParticipantId) {
       try {
         await meetingApi.leave(meeting.meeting_id, myParticipantId);
       } catch (e) { /* ignore */ }
     }
+
+    // 4. If host, mark meeting ended
     const myParticipant = participants.find((p) => p.id === myParticipantId);
     if (meeting && myParticipant?.is_host) {
       try {
         await meetingApi.update(meeting.meeting_id, { status: 'ended' });
       } catch (e) { /* ignore */ }
     }
-    router.push('/');
+
+    // 5. Clean up session storage and hard redirect to home page
+    if (typeof window !== 'undefined') {
+      const cleanId = meeting?.meeting_id.replace(/-/g, '') || '';
+      sessionStorage.removeItem(`zoom_participant_${cleanId}`);
+      sessionStorage.removeItem(`zoom_name_${cleanId}`);
+      sessionStorage.removeItem(`zoom_host_${cleanId}`);
+      window.location.href = '/';
+    }
   };
 
   const handleMuteAll = async () => {
@@ -743,9 +875,78 @@ export default function MeetingRoom({ params }: MeetingPageProps) {
           <button
             className="btn btn-primary"
             style={{ marginTop: '24px' }}
-            onClick={() => router.push('/')}
+            onClick={() => { window.location.href = '/'; }}
           >
             Back to Home
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Pre-join Display Name Prompt (for direct invite links)
+  if (needsNamePrompt && meeting) {
+    return (
+      <div className="meeting-room" style={{ alignItems: 'center', justifyContent: 'center', position: 'fixed', inset: 0, width: '100vw', height: '100vh', background: '#1A1A24', zIndex: 200 }}>
+        <div style={{
+          background: '#242435',
+          padding: '36px 32px',
+          borderRadius: '16px',
+          width: '90%',
+          maxWidth: '420px',
+          textAlign: 'center',
+          boxShadow: '0 25px 50px -12px rgba(0,0,0,0.5)',
+          border: '1px solid rgba(255,255,255,0.1)'
+        }}>
+          <div style={{
+            width: '48px',
+            height: '48px',
+            borderRadius: '12px',
+            background: 'var(--zoom-blue)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            margin: '0 auto 16px'
+          }}>
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polygon points="23 7 16 12 23 17 23 7" />
+              <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
+            </svg>
+          </div>
+          <h2 style={{ fontSize: '20px', fontWeight: 600, color: 'white', marginBottom: '6px' }}>Join Meeting</h2>
+          <p style={{ fontSize: '13px', color: '#94A3B8', marginBottom: '20px' }}>{meeting.title}</p>
+          <div style={{ marginBottom: '20px', textAlign: 'left' }}>
+            <label style={{ display: 'block', fontSize: '12px', color: '#CBD5E1', marginBottom: '6px', fontWeight: 500 }}>
+              Your Display Name
+            </label>
+            <input
+              type="text"
+              value={joinPromptName}
+              onChange={(e) => setJoinPromptName(e.target.value)}
+              placeholder="e.g. Alex"
+              style={{
+                width: '100%',
+                padding: '12px 14px',
+                background: '#1A1A24',
+                border: '1px solid rgba(255,255,255,0.15)',
+                borderRadius: '8px',
+                color: 'white',
+                fontSize: '14px',
+                outline: 'none',
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handleConfirmJoin();
+              }}
+              autoFocus
+            />
+          </div>
+          <button
+            className="btn btn-primary"
+            style={{ width: '100%', padding: '12px', fontSize: '14px', fontWeight: 600, borderRadius: '8px', cursor: 'pointer' }}
+            onClick={handleConfirmJoin}
+            disabled={isJoiningRoom}
+          >
+            {isJoiningRoom ? 'Joining...' : 'Join Meeting'}
           </button>
         </div>
       </div>
@@ -771,6 +972,8 @@ export default function MeetingRoom({ params }: MeetingPageProps) {
       </div>
     );
   }
+
+  const isCurrentHost = !!participants.find((p) => p.id === myParticipantId)?.is_host;
 
   return (
     <div className="meeting-room" style={{ position: 'fixed', inset: 0, width: '100vw', height: '100vh', minHeight: '100vh', background: '#1A1A24', overflow: 'hidden', zIndex: 200 }}>
@@ -900,6 +1103,7 @@ export default function MeetingRoom({ params }: MeetingPageProps) {
                       }}
                       autoPlay
                       playsInline
+                      muted
                       className="video-tile-video"
                       style={{ transform: 'none' }}
                     />
@@ -937,7 +1141,7 @@ export default function MeetingRoom({ params }: MeetingPageProps) {
           onMuteAll={handleMuteAll}
           onToggleMute={handleToggleParticipantMute}
           onRemove={handleRemoveParticipant}
-          isHost={true}
+          isHost={isCurrentHost}
         />
 
         {/* Chat Panel */}
@@ -976,6 +1180,7 @@ export default function MeetingRoom({ params }: MeetingPageProps) {
         onShareScreen={handleShareScreen}
         onEndMeeting={handleEndMeeting}
         onReaction={handleReaction}
+        isHost={isCurrentHost}
       />
 
       {/* Toast */}
@@ -983,5 +1188,3 @@ export default function MeetingRoom({ params }: MeetingPageProps) {
     </div>
   );
 }
-
-

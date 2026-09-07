@@ -84,7 +84,10 @@ export default function Home() {
     if (newMeetingId) {
       const cleanId = newMeetingId.replace(/-/g, '');
       setShowNewMeeting(false);
-      router.push(`/meeting/${cleanId}`);
+      if (typeof window !== 'undefined') {
+        sessionStorage.setItem(`zoom_host_${cleanId}`, 'true');
+      }
+      router.push(`/meeting/${cleanId}?name=Kartik&host=true`);
     } else {
       handleOpenNewMeeting();
     }
@@ -116,7 +119,11 @@ export default function Home() {
       }
 
       // 2. Join meeting as participant
-      await meetingApi.join(cleanId, { display_name: displayName });
+      const newPart = await meetingApi.join(cleanId, { display_name: displayName });
+      if (typeof window !== 'undefined' && newPart?.id) {
+        sessionStorage.setItem(`zoom_participant_${cleanId}`, String(newPart.id));
+        sessionStorage.setItem(`zoom_name_${cleanId}`, displayName);
+      }
 
       // 3. Navigate to meeting room
       setShowJoinMeeting(false);
@@ -555,7 +562,12 @@ export default function Home() {
                             <div className="meeting-btns-col" style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                               <button
                                 className="zoom-start-btn"
-                                onClick={() => router.push(`/meeting/${cleanId}`)}
+                                onClick={() => {
+                                  if (typeof window !== 'undefined') {
+                                    sessionStorage.setItem(`zoom_host_${cleanId}`, 'true');
+                                  }
+                                  router.push(`/meeting/${cleanId}?name=Kartik&host=true`);
+                                }}
                               >
                                 Start
                               </button>

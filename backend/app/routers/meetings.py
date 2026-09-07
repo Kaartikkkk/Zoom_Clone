@@ -12,8 +12,11 @@ from ..schemas import (
     MessageResponse
 )
 from ..utils import generate_meeting_id, generate_invite_link
+from ..websocket_manager import manager
+import asyncio
 
 router = APIRouter(prefix="/api/meetings", tags=["meetings"])
+
 
 
 def _build_meeting_response(meeting: Meeting, db: Session) -> dict:
@@ -199,6 +202,17 @@ def update_meeting(meeting_id: str, data: MeetingUpdate, db: Session = Depends(g
                 Participant.meeting_id == meeting.id,
                 Participant.left_at.is_(None)
             ).update({"left_at": datetime.utcnow()})
+            clean_id = meeting.meeting_id.replace("-", "")
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    loop.create_task(manager.broadcast_to_room(
+                        clean_id,
+                        {"type": "meeting-ended"},
+                        "host"
+                    ))
+            except Exception:
+                pass
 
     if data.title:
         meeting.title = data.title
@@ -259,6 +273,20 @@ def leave_meeting(meeting_id: str, participant_id: int = Query(...), db: Session
         return {"message": "Left meeting"}
     participant.left_at = datetime.utcnow()
     db.commit()
+
+    clean_id = meeting_id.replace("-", "")
+    manager.disconnect(clean_id, str(participant_id))
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            loop.create_task(manager.broadcast_to_room(
+                clean_id,
+                {"type": "peer-left", "sender": str(participant_id)},
+                str(participant_id)
+            ))
+    except Exception:
+        pass
+
     return {"message": "Left meeting successfully"}
 
 
@@ -317,6 +345,24 @@ def remove_participant(meeting_id: str, participant_id: int, db: Session = Depen
         raise HTTPException(status_code=404, detail="Participant not found")
     participant.left_at = datetime.utcnow()
     db.commit()
+
+    clean_id = meeting_id.replace("-", "")
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            loop.create_task(manager.send_to_peer(
+                clean_id,
+                str(participant_id),
+                {"type": "removed-from-meeting"}
+            ))
+            loop.create_task(manager.broadcast_to_room(
+                clean_id,
+                {"type": "peer-left", "sender": str(participant_id)},
+                str(participant_id)
+            ))
+    except Exception:
+        pass
+
     return {"message": f"Removed {participant.display_name} from the meeting"}
 
 
