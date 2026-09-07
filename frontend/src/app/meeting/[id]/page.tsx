@@ -23,7 +23,7 @@ const ICE_SERVERS: RTCConfiguration = {
 
 const getWsUrl = (meetingId: string, participantId: number) => {
   const apiBase = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-  const cleanBase = apiBase.replace(/^https?:\/\//, '');
+  const cleanBase = apiBase.replace(/^https?:\/\//, '').replace(/\/+$/, '');
   const wsProto = apiBase.startsWith('https') ? 'wss' : 'ws';
   const cleanId = meetingId.replace(/-/g, '');
   return `${wsProto}://${cleanBase}/ws/meeting/${cleanId}/${participantId}`;
@@ -60,16 +60,19 @@ export default function MeetingRoom({ params }: MeetingPageProps) {
 
   const localVideoRef = useRef<HTMLVideoElement | null>(null);
   const screenVideoRef = useRef<HTMLVideoElement | null>(null);
+  const localStreamRef = useRef<MediaStream | null>(null);
   const peerConnectionsRef = useRef<Map<string, RTCPeerConnection>>(new Map());
   const remoteStreamsRef = useRef<Map<string, MediaStream>>(new Map());
+  const iceCandidateQueueRef = useRef<Map<string, RTCIceCandidateInit[]>>(new Map());
   const wsRef = useRef<WebSocket | null>(null);
+  const hasInitializedMediaRef = useRef(false);
 
   const showToast = (message: string) => {
     setToast(message);
     setTimeout(() => setToast(''), 3000);
   };
 
-  const createPeerConnection = useCallback((targetPeerId: string, stream: MediaStream | null) => {
+  const createPeerConnection = useCallback((targetPeerId: string) => {
     if (peerConnectionsRef.current.has(targetPeerId)) {
       return peerConnectionsRef.current.get(targetPeerId)!;
     }
@@ -77,9 +80,13 @@ export default function MeetingRoom({ params }: MeetingPageProps) {
     const pc = new RTCPeerConnection(ICE_SERVERS);
     peerConnectionsRef.current.set(targetPeerId, pc);
 
+    // Add local tracks if stream is ready
+    const stream = localStreamRef.current;
     if (stream) {
       stream.getTracks().forEach((track) => {
-        pc.addTrack(track, stream);
+        try {
+          pc.addTrack(track, stream);
+        } catch (e) { /* ignore duplicate */ }
       });
     }
 
@@ -89,11 +96,17 @@ export default function MeetingRoom({ params }: MeetingPageProps) {
         remoteStream = new MediaStream();
         remoteStreamsRef.current.set(targetPeerId, remoteStream);
       }
-      event.streams[0]?.getTracks().forEach((track) => {
-        if (!remoteStream!.getTracks().some((t) => t.id === track.id)) {
-          remoteStream!.addTrack(track);
+      if (event.streams && event.streams[0]) {
+        event.streams[0].getTracks().forEach((track) => {
+          if (!remoteStream!.getTracks().some((t) => t.id === track.id)) {
+            remoteStream!.addTrack(track);
+          }
+        });
+      } else if (event.track) {
+        if (!remoteStream.getTracks().some((t) => t.id === event.track.id)) {
+          remoteStream.addTrack(event.track);
         }
-      });
+      }
       setRemoteStreamsMap({ ...Object.fromEntries(remoteStreamsRef.current) });
     };
 
@@ -111,6 +124,81 @@ export default function MeetingRoom({ params }: MeetingPageProps) {
 
     return pc;
   }, []);
+
+  // Request Camera & Microphone ONCE on mount
+  useEffect(() => {
+    if (hasInitializedMediaRef.current) return;
+    hasInitializedMediaRef.current = true;
+
+    async function initMedia() {
+      if (typeof window === 'undefined') return;
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        console.warn('getUserMedia is not supported on this browser or context.');
+        return;
+      }
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { width: { ideal: 1280 }, height: { ideal: 720 } },
+          audio: { echoCancellation: true, noiseSuppression: true },
+        });
+        localStreamRef.current = stream;
+        setLocalStream(stream);
+
+        // Apply initial mute/video settings
+        stream.getVideoTracks().forEach((track) => {
+          track.enabled = isVideoOn;
+        });
+        stream.getAudioTracks().forEach((track) => {
+          track.enabled = !isMuted;
+        });
+
+        // Add tracks to any already-created peer connections
+        peerConnectionsRef.current.forEach((pc) => {
+          stream.getTracks().forEach((track) => {
+            const senders = pc.getSenders();
+            if (!senders.some((s) => s.track?.id === track.id)) {
+              pc.addTrack(track, stream);
+            }
+          });
+        });
+      } catch (err: any) {
+        console.warn('Camera/Mic permission failed, trying fallback:', err);
+        try {
+          const audioOnly = await navigator.mediaDevices.getUserMedia({ audio: true });
+          localStreamRef.current = audioOnly;
+          setLocalStream(audioOnly);
+        } catch (e) {
+          console.warn('Media unavailable:', e);
+        }
+      }
+    }
+
+    initMedia();
+
+    return () => {
+      if (localStreamRef.current) {
+        localStreamRef.current.getTracks().forEach((track) => track.stop());
+      }
+    };
+  }, []);
+
+  // Sync peer connection tracks when localStream updates
+  useEffect(() => {
+    if (!localStream) return;
+    peerConnectionsRef.current.forEach((pc) => {
+      localStream.getTracks().forEach((track) => {
+        const senders = pc.getSenders();
+        const existing = senders.find((s) => s.track?.kind === track.kind);
+        if (existing) {
+          existing.replaceTrack(track);
+        } else {
+          try {
+            pc.addTrack(track, localStream);
+          } catch (e) { /* ignore */ }
+        }
+      });
+    });
+  }, [localStream]);
 
   // WebRTC Signaling via WebSocket
   useEffect(() => {
@@ -132,7 +220,7 @@ export default function MeetingRoom({ params }: MeetingPageProps) {
         const senderId = String(msg.sender);
 
         if (msg.type === 'peer-joined') {
-          const pc = createPeerConnection(senderId, localStream);
+          const pc = createPeerConnection(senderId);
           const offer = await pc.createOffer();
           await pc.setLocalDescription(offer);
           ws.send(
@@ -142,9 +230,34 @@ export default function MeetingRoom({ params }: MeetingPageProps) {
               offer,
             })
           );
+        } else if (msg.type === 'room-peers') {
+          // Connect to all peers already present in room
+          for (const peerId of (msg.peers || [])) {
+            const pIdStr = String(peerId);
+            const pc = createPeerConnection(pIdStr);
+            const offer = await pc.createOffer();
+            await pc.setLocalDescription(offer);
+            ws.send(
+              JSON.stringify({
+                type: 'offer',
+                target: pIdStr,
+                offer,
+              })
+            );
+          }
         } else if (msg.type === 'offer') {
-          const pc = createPeerConnection(senderId, localStream);
+          const pc = createPeerConnection(senderId);
           await pc.setRemoteDescription(new RTCSessionDescription(msg.offer));
+
+          // Drain queued ICE candidates
+          const queue = iceCandidateQueueRef.current.get(senderId) || [];
+          for (const cand of queue) {
+            try {
+              await pc.addIceCandidate(new RTCIceCandidate(cand));
+            } catch (e) { /* ignore */ }
+          }
+          iceCandidateQueueRef.current.delete(senderId);
+
           const answer = await pc.createAnswer();
           await pc.setLocalDescription(answer);
           ws.send(
@@ -158,11 +271,26 @@ export default function MeetingRoom({ params }: MeetingPageProps) {
           const pc = peerConnectionsRef.current.get(senderId);
           if (pc) {
             await pc.setRemoteDescription(new RTCSessionDescription(msg.answer));
+
+            // Drain queued ICE candidates
+            const queue = iceCandidateQueueRef.current.get(senderId) || [];
+            for (const cand of queue) {
+              try {
+                await pc.addIceCandidate(new RTCIceCandidate(cand));
+              } catch (e) { /* ignore */ }
+            }
+            iceCandidateQueueRef.current.delete(senderId);
           }
         } else if (msg.type === 'candidate') {
           const pc = peerConnectionsRef.current.get(senderId);
-          if (pc) {
-            await pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
+          if (pc && pc.remoteDescription && pc.remoteDescription.type) {
+            try {
+              await pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
+            } catch (e) { /* ignore */ }
+          } else {
+            const queue = iceCandidateQueueRef.current.get(senderId) || [];
+            queue.push(msg.candidate);
+            iceCandidateQueueRef.current.set(senderId, queue);
           }
         } else if (msg.type === 'peer-left') {
           const pc = peerConnectionsRef.current.get(senderId);
@@ -184,49 +312,9 @@ export default function MeetingRoom({ params }: MeetingPageProps) {
       peerConnectionsRef.current.forEach((pc) => pc.close());
       peerConnectionsRef.current.clear();
       remoteStreamsRef.current.clear();
+      iceCandidateQueueRef.current.clear();
     };
-  }, [meeting, myParticipantId, localStream, createPeerConnection]);
-
-  // Request WebRTC Camera & Microphone stream
-  useEffect(() => {
-    let activeStream: MediaStream | null = null;
-
-    async function initMedia() {
-      if (typeof window === 'undefined') return;
-      try {
-        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-          console.warn('getUserMedia is not supported on this browser or context.');
-          return;
-        }
-        activeStream = await navigator.mediaDevices.getUserMedia({
-          video: true,
-          audio: true,
-        });
-        setLocalStream(activeStream);
-
-        // Apply initial mute/video settings
-        activeStream.getVideoTracks().forEach((track) => {
-          track.enabled = isVideoOn;
-        });
-        activeStream.getAudioTracks().forEach((track) => {
-          track.enabled = !isMuted;
-        });
-      } catch (err: any) {
-        console.warn('Webcam or Microphone permission denied or unavailable:', err);
-        showToast('Camera/Microphone permissions required for video & audio.');
-      }
-    }
-
-    if (meeting) {
-      initMedia();
-    }
-
-    return () => {
-      if (activeStream) {
-        activeStream.getTracks().forEach((track) => track.stop());
-      }
-    };
-  }, [meeting]);
+  }, [meeting?.meeting_id, myParticipantId, createPeerConnection]);
 
   // Sync video track with state
   useEffect(() => {
@@ -738,6 +826,20 @@ export default function MeetingRoom({ params }: MeetingPageProps) {
                   key={p.id}
                   className={`video-tile ${speakingId === p.id ? 'is-speaking' : ''}`}
                 >
+                  {/* Dedicated audio playback element for remote participants */}
+                  {!isMe && remoteStream && (
+                    <audio
+                      ref={(el) => {
+                        if (el && el.srcObject !== remoteStream) {
+                          el.srcObject = remoteStream;
+                          el.play().catch(() => {});
+                        }
+                      }}
+                      autoPlay
+                      playsInline
+                    />
+                  )}
+
                   {showLiveVideo ? (
                     <video
                       ref={(el) => {
@@ -754,8 +856,9 @@ export default function MeetingRoom({ params }: MeetingPageProps) {
                   ) : showRemoteVideo ? (
                     <video
                       ref={(el) => {
-                        if (el && remoteStream && el.srcObject !== remoteStream) {
+                        if (el && el.srcObject !== remoteStream) {
                           el.srcObject = remoteStream;
+                          el.play().catch(() => {});
                         }
                       }}
                       autoPlay

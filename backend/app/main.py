@@ -66,6 +66,14 @@ async def websocket_endpoint(websocket: WebSocket, meeting_id: str, participant_
         str(participant_id)
     )
 
+    # Send existing peers in room to the newly connected peer
+    existing_peers = [
+        pid for pid in manager.active_connections.get(clean_id, {}).keys()
+        if pid != str(participant_id)
+    ]
+    if existing_peers:
+        await websocket.send_json({"type": "room-peers", "peers": existing_peers})
+
     try:
         while True:
             data = await websocket.receive_text()
@@ -80,19 +88,6 @@ async def websocket_endpoint(websocket: WebSocket, meeting_id: str, participant_
 
     except WebSocketDisconnect:
         manager.disconnect(clean_id, str(participant_id))
-        
-        # Mark participant left_at in SQLite database
-        try:
-            pid = int(participant_id)
-            db = SessionLocal()
-            try:
-                db.query(Participant).filter(Participant.id == pid).update({"left_at": datetime.utcnow()})
-                db.commit()
-            finally:
-                db.close()
-        except Exception:
-            pass
-
         await manager.broadcast_to_room(
             clean_id,
             {"type": "peer-left", "sender": str(participant_id)},
