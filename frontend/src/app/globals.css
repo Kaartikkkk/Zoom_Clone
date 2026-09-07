@@ -2019,6 +2019,10 @@ nextjs-portal, [data-nextjs-toast], #nextjs-dev-tools, div[class*="next-dev"] {
 .meeting-room {
   position: fixed;
   inset: 0;
+  width: 100vw;
+  height: 100vh;
+  min-height: 100vh;
+  min-height: -webkit-fill-available;
   background: var(--bg-meeting);
   display: flex;
   flex-direction: column;

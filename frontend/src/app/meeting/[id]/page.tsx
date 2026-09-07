@@ -488,7 +488,7 @@ export default function MeetingRoom({ params }: MeetingPageProps) {
   }
 
   return (
-    <div className="meeting-room" style={{ position: 'relative', overflow: 'hidden' }}>
+    <div className="meeting-room" style={{ position: 'fixed', inset: 0, width: '100vw', height: '100vh', minHeight: '100vh', background: '#1A1A24', overflow: 'hidden', zIndex: 200 }}>
       {/* Floating Emoji Reactions Overlay */}
       {activeReactions.map((r) => (
         <div
