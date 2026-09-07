@@ -74,259 +74,160 @@ export default function AuthModal({
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div
-        className="modal-content auth-modal-content"
-        onClick={(e) => e.stopPropagation()}
-        style={{ maxWidth: '440px', width: '90%', padding: 0, overflow: 'hidden' }}
-      >
-        {/* Header with Zoom Branding */}
-        <div style={{
-          padding: '24px 28px 18px',
-          borderBottom: '1px solid var(--border-color)',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          background: '#FFFFFF',
-        }}>
+      <div className="modal auth-modal" onClick={(e) => e.stopPropagation()}>
+        {/* Header */}
+        <div className="modal-header">
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <img src="/zoom-logo-new.png" alt="Zoom" style={{ height: '22px', width: 'auto' }} />
-            <span style={{ fontSize: '15px', fontWeight: 600, color: 'var(--text-primary)' }}>
+            <h2 style={{ fontSize: '18px', margin: 0 }}>
               {tab === 'login' ? 'Sign In' : 'Sign Up Free'}
-            </span>
+            </h2>
           </div>
-          <button
-            onClick={onClose}
-            className="modal-close-btn"
-            style={{
-              background: 'none',
-              border: 'none',
-              fontSize: '20px',
-              cursor: 'pointer',
-              color: 'var(--text-secondary)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              width: '28px',
-              height: '28px',
-              borderRadius: '50%',
-            }}
-          >
-            &times;
+          <button className="modal-close" onClick={onClose} title="Close">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
           </button>
         </div>
 
-        {/* Tab Switcher */}
-        <div style={{
-          display: 'flex',
-          background: '#F1F5F9',
-          padding: '4px',
-          margin: '20px 28px 0',
-          borderRadius: '8px',
-          gap: '4px',
-        }}>
-          <button
-            type="button"
-            onClick={() => { setTab('login'); setError(''); }}
-            style={{
-              flex: 1,
-              padding: '8px',
-              fontSize: '14px',
-              fontWeight: tab === 'login' ? 600 : 500,
-              background: tab === 'login' ? '#FFFFFF' : 'transparent',
-              color: tab === 'login' ? 'var(--zoom-blue)' : 'var(--text-secondary)',
-              border: 'none',
-              borderRadius: '6px',
-              cursor: 'pointer',
-              boxShadow: tab === 'login' ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
-              transition: 'all 0.2s ease',
-            }}
-          >
-            Sign In
-          </button>
-          <button
-            type="button"
-            onClick={() => { setTab('signup'); setError(''); }}
-            style={{
-              flex: 1,
-              padding: '8px',
-              fontSize: '14px',
-              fontWeight: tab === 'signup' ? 600 : 500,
-              background: tab === 'signup' ? '#FFFFFF' : 'transparent',
-              color: tab === 'signup' ? 'var(--zoom-blue)' : 'var(--text-secondary)',
-              border: 'none',
-              borderRadius: '6px',
-              cursor: 'pointer',
-              boxShadow: tab === 'signup' ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
-              transition: 'all 0.2s ease',
-            }}
-          >
-            Sign Up
-          </button>
-        </div>
+        {/* Modal Body */}
+        <div className="modal-body">
+          {/* Tab Switcher */}
+          <div className="auth-tabs">
+            <button
+              type="button"
+              className={`auth-tab ${tab === 'login' ? 'active' : ''}`}
+              onClick={() => { setTab('login'); setError(''); }}
+            >
+              Sign In
+            </button>
+            <button
+              type="button"
+              className={`auth-tab ${tab === 'signup' ? 'active' : ''}`}
+              onClick={() => { setTab('signup'); setError(''); }}
+            >
+              Sign Up
+            </button>
+          </div>
 
-        {/* Form Body */}
-        <form onSubmit={handleSubmit} style={{ padding: '20px 28px 28px' }}>
-          {error && (
-            <div style={{
-              background: '#FEF2F2',
-              border: '1px solid #FCA5A5',
-              color: '#B91C1C',
-              padding: '10px 14px',
-              borderRadius: '8px',
-              fontSize: '13px',
-              marginBottom: '16px',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-            }}>
-              <span>⚠️</span>
-              <span>{error}</span>
-            </div>
-          )}
+          {/* Form */}
+          <form onSubmit={handleSubmit}>
+            {error && (
+              <div style={{
+                background: '#FEF2F2',
+                border: '1px solid #FCA5A5',
+                color: '#B91C1C',
+                padding: '10px 14px',
+                borderRadius: '8px',
+                fontSize: '13px',
+                marginBottom: '16px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+              }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <circle cx="12" cy="12" r="10" />
+                  <line x1="12" y1="8" x2="12" y2="12" />
+                  <line x1="12" y1="16" x2="12.01" y2="16" />
+                </svg>
+                <span>{error}</span>
+              </div>
+            )}
 
-          {tab === 'signup' && (
-            <div style={{ marginBottom: '16px' }}>
-              <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '6px' }}>
-                Full Name
-              </label>
+            {tab === 'signup' && (
+              <div className="form-group">
+                <label className="form-label">Full Name *</label>
+                <input
+                  type="text"
+                  className="form-input"
+                  placeholder="e.g. Alice Smith"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  required
+                />
+              </div>
+            )}
+
+            <div className="form-group">
+              <label className="form-label">Email Address *</label>
               <input
-                type="text"
-                placeholder="e.g. Alice Smith"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
+                type="email"
+                className="form-input"
+                placeholder="name@company.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
                 required
-                style={{
-                  width: '100%',
-                  padding: '10px 12px',
-                  borderRadius: '8px',
-                  border: '1px solid var(--border-color)',
-                  fontSize: '14px',
-                  color: 'var(--text-primary)',
-                  outline: 'none',
-                  boxSizing: 'border-box',
-                }}
               />
             </div>
-          )}
 
-          <div style={{ marginBottom: '16px' }}>
-            <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '6px' }}>
-              Email Address
-            </label>
-            <input
-              type="email"
-              placeholder="name@company.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-              style={{
-                width: '100%',
-                padding: '10px 12px',
-                borderRadius: '8px',
-                border: '1px solid var(--border-color)',
-                fontSize: '14px',
-                color: 'var(--text-primary)',
-                outline: 'none',
-                boxSizing: 'border-box',
-              }}
-            />
-          </div>
-
-          <div style={{ marginBottom: '20px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-              <label style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)' }}>
-                Password
-              </label>
-              <button
-                type="button"
-                onClick={() => setShowPassword(!showPassword)}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  color: 'var(--zoom-blue)',
-                  fontSize: '12px',
-                  cursor: 'pointer',
-                  fontWeight: 500,
-                }}
-              >
-                {showPassword ? 'Hide' : 'Show'}
-              </button>
+            <div className="form-group">
+              <label className="form-label">Password *</label>
+              <div className="auth-input-wrapper">
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  className="form-input"
+                  placeholder={tab === 'signup' ? 'Min 6 characters' : 'Enter your password'}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                />
+                <button
+                  type="button"
+                  className="auth-toggle-pwd-btn"
+                  onClick={() => setShowPassword(!showPassword)}
+                  title={showPassword ? 'Hide password' : 'Show password'}
+                >
+                  {showPassword ? (
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
+                      <line x1="1" y1="1" x2="23" y2="23" />
+                    </svg>
+                  ) : (
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                      <circle cx="12" cy="12" r="3" />
+                    </svg>
+                  )}
+                </button>
+              </div>
             </div>
-            <input
-              type={showPassword ? 'text' : 'password'}
-              placeholder={tab === 'signup' ? 'Min 6 characters' : 'Enter your password'}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              style={{
-                width: '100%',
-                padding: '10px 12px',
-                borderRadius: '8px',
-                border: '1px solid var(--border-color)',
-                fontSize: '14px',
-                color: 'var(--text-primary)',
-                outline: 'none',
-                boxSizing: 'border-box',
-              }}
-            />
-          </div>
 
-          <button
-            type="submit"
-            disabled={loading}
-            style={{
-              width: '100%',
-              padding: '12px',
-              borderRadius: '8px',
-              background: 'var(--zoom-blue)',
-              color: '#FFFFFF',
-              border: 'none',
-              fontSize: '14px',
-              fontWeight: 600,
-              cursor: loading ? 'not-allowed' : 'pointer',
-              opacity: loading ? 0.7 : 1,
-              transition: 'background 0.2s',
-            }}
-          >
-            {loading
-              ? 'Please wait...'
-              : tab === 'login'
-              ? 'Sign In'
-              : 'Create Zoom Account'}
-          </button>
+            <button
+              type="submit"
+              className="btn btn-primary btn-full"
+              disabled={loading}
+              style={{ marginTop: '8px', height: '44px', fontSize: '15px' }}
+            >
+              {loading
+                ? 'Please wait...'
+                : tab === 'login'
+                ? 'Sign In'
+                : 'Create Zoom Account'}
+            </button>
 
-          {/* Demo Account Hint */}
-          <div style={{
-            marginTop: '18px',
-            padding: '12px 14px',
-            background: '#F8FAFC',
-            borderRadius: '8px',
-            border: '1px solid #E2E8F0',
-            fontSize: '12px',
-            color: '#64748B',
-          }}>
-            <div style={{ fontWeight: 600, color: '#334155', marginBottom: '4px' }}>💡 Quick Demo Host Login:</div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span>kartik@zoom.us / password123</span>
-              <button
-                type="button"
-                onClick={() => handleFillDemo('kartik@zoom.us', 'password123')}
-                style={{
-                  background: '#E2E8F0',
-                  color: '#1E293B',
-                  border: 'none',
-                  padding: '3px 8px',
-                  borderRadius: '4px',
-                  fontSize: '11px',
-                  cursor: 'pointer',
-                  fontWeight: 600,
-                }}
-              >
-                Auto Fill
-              </button>
+            {/* Quick Demo Host Login Card */}
+            <div className="auth-demo-card">
+              <div className="auth-demo-header">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M21 2l-2 2m-1.5 1.5L16 7m-4 4l-4 4-2-2-4 4 1.5 1.5L7 17l4-4" />
+                  <circle cx="15.5" cy="8.5" r="4.5" />
+                </svg>
+                <span>Quick Demo Host Login</span>
+              </div>
+              <div className="auth-demo-body">
+                <span className="auth-demo-cred">kartik@zoom.us &bull; password123</span>
+                <button
+                  type="button"
+                  className="auth-autofill-btn"
+                  onClick={() => handleFillDemo('kartik@zoom.us', 'password123')}
+                >
+                  Auto Fill
+                </button>
+              </div>
             </div>
-          </div>
-        </form>
+          </form>
+        </div>
       </div>
     </div>
   );

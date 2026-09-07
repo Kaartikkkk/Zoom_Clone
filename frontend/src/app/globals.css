@@ -1851,6 +1851,122 @@ nextjs-portal, [data-nextjs-toast], #nextjs-dev-tools, div[class*="next-dev"] {
   border-bottom-right-radius: 16px;
 }
 
+/* ─── Auth Modal Specifics ────────────────────────────────── */
+.auth-modal {
+  max-width: 440px !important;
+}
+
+.auth-tabs {
+  display: flex;
+  background: #F1F3F5;
+  padding: 4px;
+  border-radius: 10px;
+  margin-bottom: 20px;
+  gap: 4px;
+}
+
+.auth-tab {
+  flex: 1;
+  padding: 9px 16px;
+  font-size: 14px;
+  font-weight: 500;
+  color: #64748B;
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 180ms ease;
+  text-align: center;
+}
+
+.auth-tab.active {
+  background: #FFFFFF;
+  color: #0E71EB;
+  font-weight: 600;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+}
+
+.auth-input-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.auth-input-wrapper .form-input {
+  padding-right: 42px;
+}
+
+.auth-toggle-pwd-btn {
+  position: absolute;
+  right: 12px;
+  background: none;
+  border: none;
+  color: #64748B;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  transition: color 150ms ease;
+}
+
+.auth-toggle-pwd-btn:hover {
+  color: #0E71EB;
+}
+
+.auth-demo-card {
+  margin-top: 18px;
+  padding: 12px 14px;
+  background: #F0F7FF;
+  border: 1px solid #BAE6FD;
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.auth-demo-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #0369A1;
+}
+
+.auth-demo-body {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.auth-demo-cred {
+  font-family: monospace;
+  font-size: 12px;
+  color: #0C4A6E;
+  background: rgba(255, 255, 255, 0.7);
+  padding: 3px 8px;
+  border-radius: 6px;
+}
+
+.auth-autofill-btn {
+  background: #0284C7;
+  color: #FFFFFF;
+  border: none;
+  padding: 5px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 150ms ease;
+  white-space: nowrap;
+}
+
+.auth-autofill-btn:hover {
+  background: #0369A1;
+}
+
 /* Form Elements */
 .form-group {
   margin-bottom: 18px;
