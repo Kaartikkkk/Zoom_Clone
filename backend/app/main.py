@@ -18,6 +18,7 @@ origins = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
     "http://localhost:3001",
+    "https://frontend-sable-rho-u2nzn8l17o.vercel.app",
 ]
 
 app.add_middleware(
