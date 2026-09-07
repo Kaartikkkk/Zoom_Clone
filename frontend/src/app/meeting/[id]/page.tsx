@@ -219,57 +219,65 @@ export default function MeetingRoom({ params }: MeetingPageProps) {
         const msg = JSON.parse(event.data);
         const senderId = String(msg.sender);
 
-        if (msg.type === 'peer-joined') {
-          const pc = createPeerConnection(senderId);
-          const offer = await pc.createOffer();
-          await pc.setLocalDescription(offer);
-          ws.send(
-            JSON.stringify({
-              type: 'offer',
-              target: senderId,
-              offer,
-            })
-          );
-        } else if (msg.type === 'room-peers') {
-          // Connect to all peers already present in room
-          for (const peerId of (msg.peers || [])) {
+        if (msg.type === 'peer-joined' || msg.type === 'room-peers') {
+          const peerIds = msg.type === 'room-peers' ? (msg.peers || []) : [senderId];
+
+          for (const peerId of peerIds) {
             const pIdStr = String(peerId);
-            const pc = createPeerConnection(pIdStr);
-            const offer = await pc.createOffer();
-            await pc.setLocalDescription(offer);
-            ws.send(
-              JSON.stringify({
-                type: 'offer',
-                target: pIdStr,
-                offer,
-              })
-            );
+            // Deterministic initiator: only peer with lower ID creates offer to prevent glare
+            const isInitiator = Number(myParticipantId) < Number(pIdStr);
+
+            if (isInitiator) {
+              const pc = createPeerConnection(pIdStr);
+              if (pc.signalingState === 'stable') {
+                const offer = await pc.createOffer();
+                await pc.setLocalDescription(offer);
+                ws.send(
+                  JSON.stringify({
+                    type: 'offer',
+                    target: pIdStr,
+                    offer,
+                  })
+                );
+              }
+            } else {
+              // Target will answer when offer arrives
+              createPeerConnection(pIdStr);
+            }
           }
         } else if (msg.type === 'offer') {
           const pc = createPeerConnection(senderId);
-          await pc.setRemoteDescription(new RTCSessionDescription(msg.offer));
-
-          // Drain queued ICE candidates
-          const queue = iceCandidateQueueRef.current.get(senderId) || [];
-          for (const cand of queue) {
+          if (pc.signalingState !== 'stable') {
             try {
-              await pc.addIceCandidate(new RTCIceCandidate(cand));
-            } catch (e) { /* ignore */ }
+              await pc.setLocalDescription({ type: 'rollback' } as any);
+            } catch (e) { /* ignore rollback error */ }
           }
-          iceCandidateQueueRef.current.delete(senderId);
 
-          const answer = await pc.createAnswer();
-          await pc.setLocalDescription(answer);
-          ws.send(
-            JSON.stringify({
-              type: 'answer',
-              target: senderId,
-              answer,
-            })
-          );
+          if (pc.signalingState === 'stable') {
+            await pc.setRemoteDescription(new RTCSessionDescription(msg.offer));
+
+            // Drain queued ICE candidates
+            const queue = iceCandidateQueueRef.current.get(senderId) || [];
+            for (const cand of queue) {
+              try {
+                await pc.addIceCandidate(new RTCIceCandidate(cand));
+              } catch (e) { /* ignore */ }
+            }
+            iceCandidateQueueRef.current.delete(senderId);
+
+            const answer = await pc.createAnswer();
+            await pc.setLocalDescription(answer);
+            ws.send(
+              JSON.stringify({
+                type: 'answer',
+                target: senderId,
+                answer,
+              })
+            );
+          }
         } else if (msg.type === 'answer') {
           const pc = peerConnectionsRef.current.get(senderId);
-          if (pc) {
+          if (pc && pc.signalingState === 'have-local-offer') {
             await pc.setRemoteDescription(new RTCSessionDescription(msg.answer));
 
             // Drain queued ICE candidates
