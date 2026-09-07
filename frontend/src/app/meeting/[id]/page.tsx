@@ -1049,7 +1049,7 @@ export default function MeetingRoom({ params }: MeetingPageProps) {
   const isCurrentHost = !!participants.find((p) => p.id === myParticipantId)?.is_host;
 
   return (
-    <div className="meeting-room" style={{ position: 'fixed', inset: 0, width: '100vw', height: '100vh', minHeight: '100vh', background: '#1A1A24', overflow: 'hidden', zIndex: 200 }}>
+    <div className="meeting-room">
       {/* Autoplay blocked audio notification banner */}
       {audioBlocked && (
         <div

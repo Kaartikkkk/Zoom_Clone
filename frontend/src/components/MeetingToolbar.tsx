@@ -100,7 +100,7 @@ export default function MeetingToolbar({
 
       {/* Share Screen */}
       <button
-        className={`toolbar-btn ${isScreenSharing ? 'active-share' : ''}`}
+        className={`toolbar-btn toolbar-btn-desktop-only ${isScreenSharing ? 'active-share' : ''}`}
         onClick={onShareScreen}
         title={isScreenSharing ? 'Stop Share' : 'Share Screen'}
       >
@@ -218,7 +218,7 @@ export default function MeetingToolbar({
 
       {/* Record */}
       <button
-        className={`toolbar-btn ${isRecording ? 'recording-active' : ''}`}
+        className={`toolbar-btn toolbar-btn-desktop-only ${isRecording ? 'recording-active' : ''}`}
         onClick={onToggleRecord}
         title={isRecording ? 'Stop Recording' : 'Record'}
       >
