@@ -10,6 +10,15 @@ import ScheduleMeetingModal from '@/components/ScheduleMeetingModal';
 import AuthModal from '@/components/AuthModal';
 import { meetingApi, scheduleApi, authApi, type Meeting, type UpcomingMeeting, type User } from '@/lib/api';
 
+const DEFAULT_USER: User = {
+  id: 1,
+  name: 'Kartik',
+  email: 'kartik@zoom.us',
+  avatar_url: null,
+  personal_meeting_id: '984-721-0352',
+  created_at: '2026-01-01T00:00:00Z',
+};
+
 export default function Home() {
   const router = useRouter();
   const [mounted, setMounted] = useState(false);
@@ -26,7 +35,7 @@ export default function Home() {
   const [joinError, setJoinError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [toast, setToast] = useState('');
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [currentUser, setCurrentUser] = useState<User | null>(DEFAULT_USER);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [authModalTab, setAuthModalTab] = useState<'login' | 'signup'>('login');
 
@@ -98,10 +107,12 @@ export default function Home() {
     if (newMeetingId) {
       const cleanId = newMeetingId.replace(/-/g, '');
       setShowNewMeeting(false);
+      const hostName = currentUser?.name || 'Kartik';
       if (typeof window !== 'undefined') {
         sessionStorage.setItem(`zoom_host_${cleanId}`, 'true');
+        sessionStorage.setItem(`zoom_name_${cleanId}`, hostName);
       }
-      router.push(`/meeting/${cleanId}?name=Kartik&host=true`);
+      router.push(`/meeting/${cleanId}?name=${encodeURIComponent(hostName)}&host=true`);
     } else {
       handleOpenNewMeeting();
     }
@@ -193,8 +204,8 @@ export default function Home() {
 
   const handleLogout = async () => {
     await authApi.logout();
-    setCurrentUser(null);
-    showToast('Signed out. Defaulting to standard profile.');
+    setCurrentUser(DEFAULT_USER);
+    showToast('Signed out. Switched to default user Kartik.');
     await loadData();
   };
 
@@ -830,6 +841,7 @@ export default function Home() {
         onJoin={handleJoinMeeting}
         error={joinError}
         isLoading={isLoading}
+        defaultName={currentUser?.name || 'Kartik'}
       />
 
       <ScheduleMeetingModal

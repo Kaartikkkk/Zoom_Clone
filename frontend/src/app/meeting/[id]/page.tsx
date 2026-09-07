@@ -74,7 +74,7 @@ export default function MeetingRoom({ params }: MeetingPageProps) {
   const [audioBlocked, setAudioBlocked] = useState(false);
 
   const [needsNamePrompt, setNeedsNamePrompt] = useState(false);
-  const [joinPromptName, setJoinPromptName] = useState('');
+  const [joinPromptName, setJoinPromptName] = useState('Kartik');
   const [isJoiningRoom, setIsJoiningRoom] = useState(false);
 
   const localVideoRef = useRef<HTMLVideoElement | null>(null);
@@ -797,7 +797,7 @@ export default function MeetingRoom({ params }: MeetingPageProps) {
     if (!meeting) return;
     setIsJoiningRoom(true);
     const cleanId = meeting.meeting_id.replace(/-/g, '');
-    const finalName = joinPromptName.trim() || 'Guest';
+    const finalName = joinPromptName.trim() || 'Kartik';
     try {
       const newPart = await meetingApi.join(meeting.meeting_id, { display_name: finalName });
       if (typeof window !== 'undefined') {
@@ -1190,7 +1190,7 @@ export default function MeetingRoom({ params }: MeetingPageProps) {
               type="text"
               value={joinPromptName}
               onChange={(e) => setJoinPromptName(e.target.value)}
-              placeholder="e.g. Alex"
+              placeholder="e.g. Kartik"
               style={{
                 width: '100%',
                 padding: '12px 14px',

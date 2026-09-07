@@ -102,9 +102,9 @@ export interface User {
   id: number;
   name: string;
   email: string;
-  avatar_url: string | null;
+  avatar_url?: string | null;
   personal_meeting_id: string;
-  created_at: string;
+  created_at?: string;
 }
 
 export const meetingApi = {

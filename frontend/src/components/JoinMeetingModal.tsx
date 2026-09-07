@@ -8,6 +8,7 @@ interface JoinMeetingModalProps {
   onJoin: (meetingId: string, displayName: string) => void;
   error?: string;
   isLoading?: boolean;
+  defaultName?: string;
 }
 
 export default function JoinMeetingModal({
@@ -16,9 +17,10 @@ export default function JoinMeetingModal({
   onJoin,
   error,
   isLoading,
+  defaultName = 'Kartik',
 }: JoinMeetingModalProps) {
   const [meetingId, setMeetingId] = useState('');
-  const [displayName, setDisplayName] = useState('');
+  const [displayName, setDisplayName] = useState(defaultName || 'Kartik');
 
   if (!isOpen) return null;
 
@@ -62,7 +64,7 @@ export default function JoinMeetingModal({
               <input
                 type="text"
                 className="form-input"
-                placeholder="Enter your display name (default: Guest)"
+                placeholder={`Enter your display name (default: ${defaultName || 'Kartik'})`}
                 value={displayName}
                 onChange={(e) => setDisplayName(e.target.value)}
               />
