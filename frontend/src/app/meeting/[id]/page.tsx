@@ -15,6 +15,7 @@ const ICE_SERVERS: RTCConfiguration = {
   iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
+    { urls: 'stun:stun2.l.google.com:19302' },
     { urls: 'stun:stun.cloudflare.com:3478' },
     {
       urls: 'turn:openrelay.metered.ca:80',
@@ -32,6 +33,7 @@ const ICE_SERVERS: RTCConfiguration = {
       credential: 'openrelay',
     },
   ],
+  iceCandidatePoolSize: 10,
 };
 
 const getWsUrl = (meetingId: string, participantId: number) => {
@@ -71,6 +73,7 @@ export default function MeetingRoom({ params }: MeetingPageProps) {
   const [isRecording, setIsRecording] = useState(false);
   const [activeReactions, setActiveReactions] = useState<{ id: string; emoji: string; left: number }[]>([]);
   const [remoteStreamsMap, setRemoteStreamsMap] = useState<{ [id: string]: MediaStream }>({});
+  const [audioBlocked, setAudioBlocked] = useState(false);
 
   const [needsNamePrompt, setNeedsNamePrompt] = useState(false);
   const [joinPromptName, setJoinPromptName] = useState('');
@@ -95,51 +98,75 @@ export default function MeetingRoom({ params }: MeetingPageProps) {
       return peerConnectionsRef.current.get(targetPeerId)!;
     }
 
+    console.log(`[WebRTC] Creating RTCPeerConnection for peer ${targetPeerId}`);
     const pc = new RTCPeerConnection(ICE_SERVERS);
     peerConnectionsRef.current.set(targetPeerId, pc);
 
-    // Bidirectional audio and video transceivers so SDP always negotiates both streams
-    try {
-      pc.addTransceiver('audio', { direction: 'sendrecv' });
-      pc.addTransceiver('video', { direction: 'sendrecv' });
-    } catch (e) { /* ignore */ }
-
-    // Add local tracks if available
+    // 1. Add local stream tracks
     const stream = localStreamRef.current;
     if (stream) {
       stream.getTracks().forEach((track) => {
         try {
-          const senders = pc.getSenders();
-          const existing = senders.find((s) => s.track?.kind === track.kind);
-          if (existing) {
-            existing.replaceTrack(track);
-          } else {
-            pc.addTrack(track, stream);
-          }
+          pc.addTrack(track, stream);
+          console.log(`[WebRTC] Added local ${track.kind} track to peer ${targetPeerId}`);
         } catch (e) { /* ignore duplicate */ }
       });
     }
 
+    // 2. Add recvonly transceivers if any media kind is missing from local stream
+    // so SDP always negotiates receiving remote audio and video
+    const senders = pc.getSenders();
+    if (!senders.some((s) => s.track?.kind === 'audio')) {
+      try { pc.addTransceiver('audio', { direction: 'recvonly' }); } catch (e) {}
+    }
+    if (!senders.some((s) => s.track?.kind === 'video')) {
+      try { pc.addTransceiver('video', { direction: 'recvonly' }); } catch (e) {}
+    }
+
+    // 3. Handle incoming remote tracks
     pc.ontrack = (event) => {
-      let remoteStream = remoteStreamsRef.current.get(targetPeerId);
-      if (!remoteStream) {
-        remoteStream = new MediaStream();
-        remoteStreamsRef.current.set(targetPeerId, remoteStream);
+      console.log(`[WebRTC] ontrack from peer ${targetPeerId}: kind=${event.track.kind}, id=${event.track.id}`);
+
+      // Listen for when the track actually un-mutes (RTP packets start flowing)
+      event.track.onunmute = () => {
+        console.log(`[WebRTC] Track unmuted from ${targetPeerId}:`, event.track.kind);
+        const currentStream = remoteStreamsRef.current.get(targetPeerId);
+        if (currentStream) {
+          const fresh = new MediaStream(currentStream.getTracks());
+          remoteStreamsRef.current.set(targetPeerId, fresh);
+          setRemoteStreamsMap((prev) => ({ ...prev, [targetPeerId]: fresh }));
+        }
+      };
+
+      let existingStream = remoteStreamsRef.current.get(targetPeerId);
+      if (!existingStream) {
+        existingStream = new MediaStream();
+        remoteStreamsRef.current.set(targetPeerId, existingStream);
       }
+
+      if (!existingStream.getTracks().some((t) => t.id === event.track.id)) {
+        existingStream.addTrack(event.track);
+      }
+
       if (event.streams && event.streams[0]) {
-        event.streams[0].getTracks().forEach((track) => {
-          if (!remoteStream!.getTracks().some((t) => t.id === track.id)) {
-            remoteStream!.addTrack(track);
+        event.streams[0].getTracks().forEach((t) => {
+          if (!existingStream!.getTracks().some((existing) => existing.id === t.id)) {
+            existingStream!.addTrack(t);
           }
         });
-      } else if (event.track) {
-        if (!remoteStream.getTracks().some((t) => t.id === event.track.id)) {
-          remoteStream.addTrack(event.track);
-        }
       }
-      setRemoteStreamsMap({ ...Object.fromEntries(remoteStreamsRef.current) });
+
+      // CRITICAL: Always construct a NEW MediaStream reference with all tracks
+      // so React state triggers and HTML media elements (video/audio) re-bind and play!
+      const freshStream = new MediaStream(existingStream.getTracks());
+      remoteStreamsRef.current.set(targetPeerId, freshStream);
+      setRemoteStreamsMap((prev) => ({
+        ...prev,
+        [targetPeerId]: freshStream,
+      }));
     };
 
+    // 4. Handle ICE candidates generated locally
     pc.onicecandidate = (event) => {
       if (event.candidate && wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
         wsRef.current.send(
@@ -149,6 +176,21 @@ export default function MeetingRoom({ params }: MeetingPageProps) {
             candidate: event.candidate,
           })
         );
+      }
+    };
+
+    // 5. Connection state monitoring
+    pc.oniceconnectionstatechange = () => {
+      console.log(`[WebRTC] ICE connection state with ${targetPeerId}:`, pc.iceConnectionState);
+      if (pc.iceConnectionState === 'failed') {
+        try { pc.restartIce(); } catch (e) {}
+      }
+    };
+
+    pc.onconnectionstatechange = () => {
+      console.log(`[WebRTC] Connection state with ${targetPeerId}:`, pc.connectionState);
+      if (pc.connectionState === 'failed') {
+        try { pc.restartIce(); } catch (e) {}
       }
     };
 
@@ -170,7 +212,7 @@ export default function MeetingRoom({ params }: MeetingPageProps) {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
           video: { width: { ideal: 1280 }, height: { ideal: 720 } },
-          audio: { echoCancellation: true, noiseSuppression: true },
+          audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
         });
         localStreamRef.current = stream;
         setLocalStream(stream);
@@ -235,22 +277,6 @@ export default function MeetingRoom({ params }: MeetingPageProps) {
           } catch (e) { /* ignore */ }
         }
       });
-
-      // If we are the designated initiator and the connection is stable, renegotiate with the new tracks
-      if (Number(myParticipantId) < Number(targetPeerId) && pc.signalingState === 'stable') {
-        pc.createOffer().then((offer) => {
-          pc.setLocalDescription(offer);
-          if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-            wsRef.current.send(
-              JSON.stringify({
-                type: 'offer',
-                target: targetPeerId,
-                offer,
-              })
-            );
-          }
-        }).catch(() => {});
-      }
     });
   }, [localStream, myParticipantId]);
 
@@ -282,6 +308,7 @@ export default function MeetingRoom({ params }: MeetingPageProps) {
             const isInitiator = Number(myParticipantId) < Number(pIdStr);
 
             if (isInitiator) {
+              console.log(`[WebRTC] Initiating offer to peer ${pIdStr}`);
               const pc = createPeerConnection(pIdStr);
               if (pc.signalingState === 'stable') {
                 const offer = await pc.createOffer();
@@ -297,19 +324,15 @@ export default function MeetingRoom({ params }: MeetingPageProps) {
                 }
               }
             } else {
-              // Target will answer when offer arrives
+              console.log(`[WebRTC] Ready for incoming offer from peer ${pIdStr}`);
               createPeerConnection(pIdStr);
             }
           }
         } else if (msg.type === 'offer') {
+          console.log(`[WebRTC] Received offer from peer ${senderId}`);
           const pc = createPeerConnection(senderId);
-          if (pc.signalingState !== 'stable') {
-            try {
-              await pc.setLocalDescription({ type: 'rollback' } as any);
-            } catch (e) { /* ignore rollback error */ }
-          }
 
-          if (pc.signalingState === 'stable') {
+          try {
             await pc.setRemoteDescription(new RTCSessionDescription(msg.offer));
 
             // Drain queued ICE candidates
@@ -323,6 +346,7 @@ export default function MeetingRoom({ params }: MeetingPageProps) {
 
             const answer = await pc.createAnswer();
             await pc.setLocalDescription(answer);
+
             if (ws.readyState === WebSocket.OPEN) {
               ws.send(
                 JSON.stringify({
@@ -331,34 +355,58 @@ export default function MeetingRoom({ params }: MeetingPageProps) {
                   answer,
                 })
               );
+              console.log(`[WebRTC] Sent answer to peer ${senderId}`);
             }
+          } catch (err) {
+            console.error(`[WebRTC] Failed handling offer from ${senderId}:`, err);
           }
         } else if (msg.type === 'answer') {
+          console.log(`[WebRTC] Received answer from peer ${senderId}`);
           const pc = peerConnectionsRef.current.get(senderId);
           if (pc && pc.signalingState === 'have-local-offer') {
-            await pc.setRemoteDescription(new RTCSessionDescription(msg.answer));
+            try {
+              await pc.setRemoteDescription(new RTCSessionDescription(msg.answer));
 
-            // Drain queued ICE candidates
-            const queue = iceCandidateQueueRef.current.get(senderId) || [];
-            for (const cand of queue) {
-              try {
-                await pc.addIceCandidate(new RTCIceCandidate(cand));
-              } catch (e) { /* ignore */ }
+              // Drain queued ICE candidates
+              const queue = iceCandidateQueueRef.current.get(senderId) || [];
+              for (const cand of queue) {
+                try {
+                  await pc.addIceCandidate(new RTCIceCandidate(cand));
+                } catch (e) { /* ignore */ }
+              }
+              iceCandidateQueueRef.current.delete(senderId);
+            } catch (err) {
+              console.error(`[WebRTC] Failed setting remote answer from ${senderId}:`, err);
             }
-            iceCandidateQueueRef.current.delete(senderId);
           }
         } else if (msg.type === 'candidate') {
           const pc = peerConnectionsRef.current.get(senderId);
           if (pc && pc.remoteDescription && pc.remoteDescription.type) {
             try {
               await pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
-            } catch (e) { /* ignore */ }
+            } catch (e) {
+              // Ignore stale candidate errors
+            }
           } else {
             const queue = iceCandidateQueueRef.current.get(senderId) || [];
             queue.push(msg.candidate);
             iceCandidateQueueRef.current.set(senderId, queue);
           }
+        } else if (msg.type === 'participant-update') {
+          setParticipants((prev) =>
+            prev.map((p) => {
+              if (p.id === Number(msg.participantId)) {
+                return {
+                  ...p,
+                  ...(msg.is_muted !== undefined ? { is_muted: msg.is_muted } : {}),
+                  ...(msg.is_video_on !== undefined ? { is_video_on: msg.is_video_on } : {}),
+                };
+              }
+              return p;
+            })
+          );
         } else if (msg.type === 'peer-left') {
+          console.log(`[WebRTC] Peer ${senderId} left the room`);
           const pc = peerConnectionsRef.current.get(senderId);
           if (pc) {
             pc.close();
@@ -393,21 +441,24 @@ export default function MeetingRoom({ params }: MeetingPageProps) {
     };
   }, [meeting?.meeting_id, myParticipantId, mediaReady, createPeerConnection]);
 
-  // Audio unlock listener for browser autoplay policy
+  // Global Audio Unlocker for browser autoplay restrictions
   useEffect(() => {
     const unlockAudio = () => {
-      document.querySelectorAll('audio, video').forEach((el) => {
-        const media = el as HTMLMediaElement;
-        if (media && !media.muted && media.paused) {
-          media.play().catch(() => {});
+      document.querySelectorAll('audio').forEach((el) => {
+        if (el.paused) {
+          el.play().then(() => {
+            setAudioBlocked(false);
+          }).catch(() => {});
         }
       });
     };
     window.addEventListener('click', unlockAudio);
     window.addEventListener('touchstart', unlockAudio);
+    window.addEventListener('keydown', unlockAudio);
     return () => {
       window.removeEventListener('click', unlockAudio);
       window.removeEventListener('touchstart', unlockAudio);
+      window.removeEventListener('keydown', unlockAudio);
     };
   }, []);
 
@@ -457,6 +508,8 @@ export default function MeetingRoom({ params }: MeetingPageProps) {
           const average = sum / bufferLength;
           if (average > 15 && myParticipantId) {
             setSpeakingId(myParticipantId);
+          } else if (average <= 15) {
+            setSpeakingId((prev) => (prev === myParticipantId ? null : prev));
           }
           animId = requestAnimationFrame(checkVolume);
         };
@@ -469,7 +522,7 @@ export default function MeetingRoom({ params }: MeetingPageProps) {
     return () => {
       if (animId) cancelAnimationFrame(animId);
       if (audioContext && audioContext.state !== 'closed') {
-        audioContext.close();
+        audioContext.close().catch(() => {});
       }
     };
   }, [localStream, isMuted, myParticipantId]);
@@ -546,7 +599,7 @@ export default function MeetingRoom({ params }: MeetingPageProps) {
       if (typeof window !== 'undefined') {
         const savedPid = sessionStorage.getItem(`zoom_participant_${cleanId}`);
         if (savedPid) {
-          const matched = parts.find(p => p.id === Number(savedPid) && !p.left_at);
+          const matched = parts.find((p) => p.id === Number(savedPid) && !p.left_at);
           if (matched) {
             existingPid = matched.id;
           }
@@ -561,7 +614,7 @@ export default function MeetingRoom({ params }: MeetingPageProps) {
 
       // 4. If host, connect to the host participant record
       if (isHostFlag) {
-        const hostPart = parts.find(p => p.is_host && !p.left_at);
+        const hostPart = parts.find((p) => p.is_host && !p.left_at);
         if (hostPart) {
           setMyParticipantId(hostPart.id);
           if (typeof window !== 'undefined') {
@@ -627,7 +680,7 @@ export default function MeetingRoom({ params }: MeetingPageProps) {
   useEffect(() => {
     if (!meeting || meeting.status === 'ended') return;
     const timer = setInterval(() => {
-      setElapsedTime(prev => prev + 1);
+      setElapsedTime((prev) => prev + 1);
     }, 1000);
     return () => clearInterval(timer);
   }, [meeting]);
@@ -656,8 +709,18 @@ export default function MeetingRoom({ params }: MeetingPageProps) {
     const newMuted = !isMuted;
     setIsMuted(newMuted);
 
-    if (localStream) {
-      localStream.getAudioTracks().forEach(t => (t.enabled = !newMuted));
+    if (localStreamRef.current) {
+      localStreamRef.current.getAudioTracks().forEach((t) => (t.enabled = !newMuted));
+    }
+
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN && myParticipantId) {
+      wsRef.current.send(
+        JSON.stringify({
+          type: 'participant-update',
+          participantId: myParticipantId,
+          is_muted: newMuted,
+        })
+      );
     }
 
     if (myParticipantId && meeting) {
@@ -673,8 +736,18 @@ export default function MeetingRoom({ params }: MeetingPageProps) {
     const newVideo = !isVideoOn;
     setIsVideoOn(newVideo);
 
-    if (localStream) {
-      localStream.getVideoTracks().forEach(t => (t.enabled = newVideo));
+    if (localStreamRef.current) {
+      localStreamRef.current.getVideoTracks().forEach((t) => (t.enabled = newVideo));
+    }
+
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN && myParticipantId) {
+      wsRef.current.send(
+        JSON.stringify({
+          type: 'participant-update',
+          participantId: myParticipantId,
+          is_video_on: newVideo,
+        })
+      );
     }
 
     if (myParticipantId && meeting) {
@@ -715,7 +788,7 @@ export default function MeetingRoom({ params }: MeetingPageProps) {
 
   // Live Chat Handling
   const handleSendMessage = (text: string) => {
-    const me = participants.find(p => p.id === myParticipantId) || participants[0];
+    const me = participants.find((p) => p.id === myParticipantId) || participants[0];
     const newMsg: ChatMessage = {
       id: String(Date.now()),
       sender: me ? me.display_name : 'Me',
@@ -723,18 +796,18 @@ export default function MeetingRoom({ params }: MeetingPageProps) {
       time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       isMe: true,
     };
-    setMessages(prev => [...prev, newMsg]);
+    setMessages((prev) => [...prev, newMsg]);
   };
 
   // Reactions Handling
   const handleReaction = (emoji: string) => {
     const reactionId = String(Date.now()) + Math.random();
     const leftPercent = 20 + Math.random() * 60;
-    setActiveReactions(prev => [...prev, { id: reactionId, emoji, left: leftPercent }]);
+    setActiveReactions((prev) => [...prev, { id: reactionId, emoji, left: leftPercent }]);
     showToast(`Reaction sent: ${emoji}`);
 
     setTimeout(() => {
-      setActiveReactions(prev => prev.filter(r => r.id !== reactionId));
+      setActiveReactions((prev) => prev.filter((r) => r.id !== reactionId));
     }, 2500);
   };
 
@@ -798,8 +871,8 @@ export default function MeetingRoom({ params }: MeetingPageProps) {
   };
 
   const handleMuteAll = async () => {
-    setParticipants(prev =>
-      prev.map(p => (p.is_host ? p : { ...p, is_muted: true }))
+    setParticipants((prev) =>
+      prev.map((p) => (p.is_host ? p : { ...p, is_muted: true }))
     );
     showToast('All participants muted');
 
@@ -813,8 +886,8 @@ export default function MeetingRoom({ params }: MeetingPageProps) {
   };
 
   const handleToggleParticipantMute = async (participantId: number, isMutedNew: boolean) => {
-    setParticipants(prev =>
-      prev.map(p => (p.id === participantId ? { ...p, is_muted: isMutedNew } : p))
+    setParticipants((prev) =>
+      prev.map((p) => (p.id === participantId ? { ...p, is_muted: isMutedNew } : p))
     );
 
     if (meeting) {
@@ -829,7 +902,7 @@ export default function MeetingRoom({ params }: MeetingPageProps) {
   };
 
   const handleRemoveParticipant = async (participantId: number) => {
-    setParticipants(prev => prev.filter(p => p.id !== participantId));
+    setParticipants((prev) => prev.filter((p) => p.id !== participantId));
     showToast('Participant removed');
 
     if (meeting) {
@@ -842,7 +915,7 @@ export default function MeetingRoom({ params }: MeetingPageProps) {
   };
 
   const getInitials = (name: string) => {
-    return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
+    return name.split(' ').map((n) => n[0]).join('').toUpperCase().slice(0, 2);
   };
 
   const getGridClass = () => {
@@ -977,6 +1050,57 @@ export default function MeetingRoom({ params }: MeetingPageProps) {
 
   return (
     <div className="meeting-room" style={{ position: 'fixed', inset: 0, width: '100vw', height: '100vh', minHeight: '100vh', background: '#1A1A24', overflow: 'hidden', zIndex: 200 }}>
+      {/* Autoplay blocked audio notification banner */}
+      {audioBlocked && (
+        <div
+          onClick={() => {
+            document.querySelectorAll('audio').forEach((el) => el.play().catch(() => {}));
+            setAudioBlocked(false);
+          }}
+          style={{
+            position: 'absolute',
+            top: '60px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            background: '#0B5CFF',
+            color: 'white',
+            padding: '8px 20px',
+            borderRadius: '20px',
+            fontSize: '13px',
+            fontWeight: 600,
+            cursor: 'pointer',
+            zIndex: 300,
+            boxShadow: '0 4px 14px rgba(11,92,255,0.5)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+          }}
+        >
+          🔊 Click anywhere to enable meeting audio
+        </div>
+      )}
+
+      {/* Continuous, dedicated background audio playback for every remote peer */}
+      <div style={{ position: 'absolute', width: 0, height: 0, overflow: 'hidden', pointerEvents: 'none' }} aria-hidden="true">
+        {Object.entries(remoteStreamsMap).map(([peerId, stream]) => (
+          <audio
+            key={peerId}
+            ref={(el) => {
+              if (el && el.srcObject !== stream) {
+                el.srcObject = stream;
+                el.play().catch((err) => {
+                  if (err.name === 'NotAllowedError') {
+                    setAudioBlocked(true);
+                  }
+                });
+              }
+            }}
+            autoPlay
+            playsInline
+          />
+        ))}
+      </div>
+
       {/* Floating Emoji Reactions Overlay */}
       {activeReactions.map((r) => (
         <div
@@ -1056,30 +1180,17 @@ export default function MeetingRoom({ params }: MeetingPageProps) {
           <div className={`video-grid ${getGridClass()}`}>
             {participants.map((p, i) => {
               const isMe = myParticipantId !== null && p.id === myParticipantId;
-              const showLiveVideo = isMe && isVideoOn && localStream && localStream.getVideoTracks().some(t => t.enabled);
+              const showLiveVideo = isMe && isVideoOn && localStream && localStream.getVideoTracks().some((t) => t.enabled);
               const pIdStr = String(p.id);
               const remoteStream = remoteStreamsMap[pIdStr];
-              const showRemoteVideo = !isMe && remoteStream && remoteStream.getVideoTracks().length > 0;
+              const hasRemoteVideo = !isMe && remoteStream && remoteStream.getVideoTracks().some((t) => t.enabled);
+              const showRemoteVideo = !isMe && p.is_video_on !== false && hasRemoteVideo;
 
               return (
                 <div
                   key={p.id}
                   className={`video-tile ${speakingId === p.id ? 'is-speaking' : ''}`}
                 >
-                  {/* Dedicated audio playback element for remote participants */}
-                  {!isMe && remoteStream && (
-                    <audio
-                      ref={(el) => {
-                        if (el && el.srcObject !== remoteStream) {
-                          el.srcObject = remoteStream;
-                          el.play().catch(() => {});
-                        }
-                      }}
-                      autoPlay
-                      playsInline
-                    />
-                  )}
-
                   {showLiveVideo ? (
                     <video
                       ref={(el) => {
