@@ -242,7 +242,25 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 - API Base URL: `http://localhost:8000`
 - Interactive API Docs: `http://localhost:8000/docs`
-- *Note: Database (`zoom_clone.db`) will be created and seeded automatically on first run.*
+- *Note: Database (`zoom_clone.db`) is initialized and seeded automatically on first startup.*
+
+#### Manual Database Seeding / Reset
+To populate or reset the SQLite database with rich sample data at any time:
+```bash
+cd backend
+source venv/bin/activate
+
+# Seed sample data (users, scheduled meetings, recent history)
+python -m app.seed
+
+# Or force-reset and re-seed from scratch
+python -m app.seed --reset
+```
+
+The seed script automatically provisions:
+- **5 Realistic Users**: Kartik (Host), Sarah Miller (Frontend Lead), Alex Chen (Systems Architect), David Patel (Product Director), Emily Rodriguez (UI/UX Designer).
+- **4 Upcoming Scheduled Meetings**: Spanning Today, Tomorrow, Day + 2, and Day + 4 with descriptions, timezones, durations, and auto-generated links.
+- **4 Ended Recent Meetings**: Past completed sessions with realistic durations (25–50 min) and multi-participant join/leave logs.
 
 ---
 
